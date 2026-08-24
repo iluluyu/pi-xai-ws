@@ -140,8 +140,10 @@ context-window setting.
   before model output begins. Stored continuation rebuilds that retry from its
   durable checkpoint rather than assuming a repeated socket-local response ID
   identifies the latest state on a replacement socket.
-- Protocol errors, local bound violations, aborts, disposal, and failures after
-  output begins never replay.
+- If a Grok assistant message in the current agent run is only thinking, with
+  `stop` and no text or tools, the extension injects one hidden same-run follow-up
+  so Pi continues instead of settling. The first assistant of a run is left alone.
+  Other providers are not nudged.
 - Sockets enable TCP keepalive and have fixed memory, age, and idle bounds.
 
 See [Transport design](docs/transport.md) for payload construction, lifecycle,

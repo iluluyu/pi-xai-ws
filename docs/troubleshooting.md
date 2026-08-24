@@ -203,6 +203,20 @@ Start a new Pi session after uninstalling the package or switching the same
 model to an `openai-completions` transport. This avoids asking another transport
 to reinterpret encrypted Responses reasoning and Responses-specific history.
 
+## Grok stopped after thinking only
+
+If a Grok turn is already in a tool loop and the next assistant message is only
+a completed reasoning summary, Pi treats `stop` with no tools as the end of the
+run. This package queues one hidden same-run steer so the model continues. The
+first assistant of a run is not nudged, and the recovery fires at most once per
+`agent_start`.
+
+With `PI_XAI_WS_DEBUG=1`, a successful queue logs
+`empty-thinking nudge queued deliverAs=steer`. In T3 RPC mode the same recovery
+can appear as a `notify` activity row. A test-only latch,
+`PI_XAI_WS_TEST_NUDGE=1` or `getAgentDir()/pi-xai-ws.test-nudge`, treats any
+mid-loop no-tool stop as that case. Do not leave the latch enabled.
+
 ## Package load failures
 
 Pi supplies `@earendil-works/pi-ai` and

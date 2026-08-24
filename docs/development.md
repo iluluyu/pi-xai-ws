@@ -26,6 +26,7 @@ catalog and verifies that `grok-4.6` still resolves to `openai-responses`.
 | `src/stream.ts` | Pi stream setup, hooks, storage safety enforcement, output projection, and error completion. |
 | `src/payload.ts` | Pi option preparation, full-context payloads, tools, reasoning, headers, and cache affinity. |
 | `src/continuation.ts` | Stored-response chain planning, canonical prefix digests, and rejection detection. |
+| `src/empty-thinking.ts` | Same-run Grok recovery after a mid-loop thinking-only stop. |
 | `src/stored-context.ts` | Context-usage inspection and the one-shot stored-limit warning. |
 | `src/history.ts` | Responses and legacy thinking-signature handling. |
 | `src/config.ts` | Global `getAgentDir()/pi-xai-ws.json` loading, WebSocket URL safety, and environment settings. |
