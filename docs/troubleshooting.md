@@ -37,9 +37,11 @@ closes, rotations, request mode, input-item counts, and pre-output recovery.
 They do not include credentials, request content, generated text, reasoning, or
 tool arguments.
 
-A healthy two-turn session should normally show one socket open and two
+A healthy default two-turn session should normally show one socket open and two
 `mode=full` requests. The second request should have more input items because it
-contains the expanded local history.
+contains the expanded local history. Stored mode normally shows one initial
+`mode=full` request followed by `mode=continue` requests until a recovery or
+stored-context safety downgrade occurs.
 
 ## Stored-response config is not taking effect
 
@@ -57,6 +59,30 @@ The strings `"true"` and `"1"` do not enable storage. A defined
 `false` forces storage off. With `PI_XAI_WS_DEBUG=1`, an unreadable or malformed
 file emits a sanitized diagnostic and remains off. Calls without a persistent
 Pi session ID remain `store: false` regardless of configuration.
+
+## Response is too large to store
+
+xAI may reject a long stored response after it has already streamed model
+output:
+
+```text
+Response is too large to store. You can avoid this error by setting `store` to false in your request.
+```
+
+Version 0.5.1 and earlier can surface this as a failed Pi turn. Set
+`PI_XAI_WS_STORE=0` or change the global config to `"storeResponses": false`
+before retrying. That uses complete local history and avoids provider storage.
+Compact the thread to reduce its context before re-enabling stored mode.
+
+Newer package versions prevent the known failure path. At an estimated 220,000
+request-context tokens by default, the extension warns once, clears the stored
+chain, and switches to full-history `store: false` requests until compaction
+reduces the context. The estimate includes reliable provider usage, trailing
+messages, and the prepared request, so it also catches a large tool result added
+since the previous response. Configure the boundary with
+`maxStoredContextTokens` in the global package config or a valid
+`PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. Debug logs show
+`storage disabled for oversized context` when the guard activates.
 
 ## Authentication failures
 

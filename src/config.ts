@@ -4,6 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_LIVENESS_TIMEOUT_MS, DEFAULT_PING_INTERVAL_MS } from "./liveness.ts";
 
 export const DEFAULT_WS_URL = "wss://api.x.ai/v1/responses";
+export const DEFAULT_MAX_STORED_CONTEXT_TOKENS = 220_000;
 export const DEFAULT_WS_IDLE_TIMEOUT_MS = 5 * 60_000;
 export const DEFAULT_WS_MAX_AGE_MS = 24 * 60_000;
 export const XAI_WS_CONFIG_FILENAME = "pi-xai-ws.json";
@@ -36,20 +37,40 @@ export function storeResponsesEnabled(configPath?: string): boolean {
         const normalized = envValue.trim().toLowerCase();
         return normalized === "1" || normalized === "true";
     }
+    return readGlobalConfig(configPath)?.storeResponses === true;
+}
+
+export function resolveMaxStoredContextTokens(configPath?: string): number {
+    const envValue = positiveInteger(process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS);
+    if (envValue !== undefined) {
+        return envValue;
+    }
+    const configured = readGlobalConfig(configPath)?.maxStoredContextTokens;
+    return positiveInteger(configured) ?? DEFAULT_MAX_STORED_CONTEXT_TOKENS;
+}
+
+function readGlobalConfig(configPath?: string): Record<string, unknown> | undefined {
     let resolvedConfigPath: string | undefined;
     try {
         resolvedConfigPath = configPath ?? join(getAgentDir(), XAI_WS_CONFIG_FILENAME);
         const parsed: unknown = JSON.parse(readFileSync(resolvedConfigPath, "utf8"));
-        return isPlainRecord(parsed) && parsed.storeResponses === true;
+        return isPlainRecord(parsed) ? parsed : undefined;
     } catch (error) {
         if (!isMissingFileError(error) && process.env.PI_XAI_WS_DEBUG === "1") {
             const configLabel = resolvedConfigPath ?? "global config";
-            process.stderr.write(
-                `[pi-xai-ws] could not read ${configLabel}; stored responses remain disabled\n`,
-            );
+            process.stderr.write(`[pi-xai-ws] could not read ${configLabel}; using safe defaults\n`);
         }
-        return false;
+        return undefined;
     }
+}
+
+function positiveInteger(value: unknown): number | undefined {
+    if (typeof value === "string" && value.trim() !== "") {
+        value = Number(value);
+    }
+    return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+        ? value
+        : undefined;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

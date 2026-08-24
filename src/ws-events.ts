@@ -24,6 +24,7 @@ const MAX_QUEUED_EVENTS = 4_096;
 const MAX_TIMER_MS = 2_147_000_000;
 const REQUEST_AGE_HEADROOM_DIVISOR = 4;
 const TCP_KEEPALIVE_INITIAL_DELAY_MS = 15_000;
+const normalizedWireRecords = new WeakSet<Record<string, unknown>>();
 
 const TERMINAL_TYPES = new Set([
     "response.completed",
@@ -245,7 +246,10 @@ async function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Pro
     }
 }
 
-function normalizeWireRecord(value: Record<string, unknown>): Record<string, unknown> {
+export function normalizeWireRecordWithSize(value: Record<string, unknown>): {
+    payload: Record<string, unknown>;
+    tokenEstimate: number;
+} {
     try {
         const serialized = JSON.stringify(value);
         if (typeof serialized !== "string") {
@@ -253,7 +257,12 @@ function normalizeWireRecord(value: Record<string, unknown>): Record<string, unk
         }
         const parsed: unknown = JSON.parse(serialized);
         if (isPlainEvent(parsed)) {
-            return parsed;
+            const nonAsciiBytes = Math.max(0, Buffer.byteLength(serialized, "utf8") - serialized.length);
+            normalizedWireRecords.add(parsed);
+            return {
+                payload: parsed,
+                tokenEstimate: Math.ceil(serialized.length / 4 + nonAsciiBytes / 2),
+            };
         }
     } catch {
         // Fall through to the static, payload-safe error below.
@@ -261,8 +270,15 @@ function normalizeWireRecord(value: Record<string, unknown>): Record<string, unk
     throw new TypeError("xAI WebSocket payload must be a JSON-serializable object");
 }
 
-function fullContextPayload(value: Record<string, unknown>): Record<string, unknown> {
-    const payload = normalizeWireRecord(value);
+function normalizeWireRecord(value: Record<string, unknown>): Record<string, unknown> {
+    return normalizeWireRecordWithSize(value).payload;
+}
+
+function fullContextPayload(
+    value: Record<string, unknown>,
+    alreadyNormalized = false,
+): Record<string, unknown> {
+    const payload = alreadyNormalized ? { ...value } : normalizeWireRecord(value);
     payload.store = false;
     delete payload.previous_response_id;
     return payload;
@@ -848,7 +864,9 @@ class XaiWsSession {
             }
 
             this.counters.requests += 1;
-            const wirePayload = normalizeWireRecord(options.createPayload);
+            const wirePayload = normalizedWireRecords.has(options.createPayload)
+                ? options.createPayload
+                : normalizeWireRecord(options.createPayload);
             const storeResponses = options.storeResponses === true;
             clearStoredChainOnExit = storeResponses;
             if (!storeResponses) {
@@ -887,7 +905,7 @@ class XaiWsSession {
                     : this.continuationForConnection(connection);
                 const payload = storeResponses
                     ? this.planStoredRequest(wirePayload, continuation)
-                    : fullContextPayload(wirePayload);
+                    : fullContextPayload(wirePayload, true);
                 const inputItems = Array.isArray(payload.input) ? payload.input.length : 0;
                 if (typeof payload.previous_response_id === "string") {
                     debugLog(`request mode=continue input_items=${inputItems}`);

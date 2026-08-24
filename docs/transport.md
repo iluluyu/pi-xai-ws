@@ -81,6 +81,11 @@ it off. Missing, malformed, unreadable, and non-boolean config values remain
 off. Project-local config is intentionally unsupported so a repository cannot
 enable server-side retention.
 
+The same global config accepts `maxStoredContextTokens`, a positive integer that
+defaults to 220,000. A valid `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS` overrides it;
+an invalid environment value falls back to the file and then the default. The
+value is a safety boundary for provider storage, not the model context window.
+
 The session ID normally supplies both:
 
 - `prompt_cache_key` in the request payload
@@ -163,6 +168,39 @@ disposal clear both continuation positions. Debug counters expose
 `continuedRequests`, `continuationFallbacks`, and `fullRequests`;
 `PI_XAI_WS_DEBUG=1` logs each request as `mode=full` or `mode=continue` with its
 input item count.
+
+xAI can reject a long response after model output with `Response is too large to
+store`. A post-output retry would duplicate generated work, so the transport
+prevents that failure instead. Before each request it estimates the current
+context from the latest reliable provider total usage plus trailing messages.
+After compaction, retained pre-compaction usage is ignored. Pi converts the
+compaction entry to a prefixed user message before provider streaming, so the
+estimator recognizes both the raw extension shape and that wire-facing shape,
+then uses timestamps to reject retained older assistants. If no reliable usage
+exists, all current messages are estimated rather than allowing storage by
+default. The normalized prepared payload supplies a second estimate that
+includes system instructions, tools, payload-hook additions, and a large new
+tool result before it is sent.
+
+The opt-in stored path normalizes the post-hook payload once before estimating
+it and marks that record as already normalized for the session pool. The default
+storage-off path skips the estimate and keeps its existing one-shot wire
+normalization.
+
+At or above `maxStoredContextTokens`, the transport clears continuation state
+and forces `store: false` plus complete local history. The stream records that
+exact decision for the Pi extension event, which warns once while the safety
+mode remains active. Compaction normally lowers the estimate and allows stored
+continuation to start a fresh chain again.
+
+The 220,000-token default leaves headroom below the failure observed at roughly
+251,000 input tokens in a long SuperGrok OAuth tool loop. xAI does not currently
+document this storage limit, so the threshold is configurable. Current xAI
+WebSocket documentation says same-socket continuation supports `store: false`,
+but a direct SuperGrok OAuth probe on 2026-08-23 returned
+`Response with id=... not found` for that shape. The package therefore keeps
+sending full local history after the safety downgrade instead of relying on a
+continuation mode that the intended credential path rejects.
 
 Retained server state also means xAI holds prompt and response content for its
 own retention period. That tradeoff, not transport mechanics, is why the mode

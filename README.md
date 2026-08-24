@@ -72,9 +72,10 @@ model output begins.
 | `PI_XAI_WS_PING_INTERVAL_MS`    | `15000`                                                               | Inbound silence in milliseconds before a protocol ping.                                                                                        |
 | `PI_XAI_WS_LIVENESS_TIMEOUT_MS` | `60000`                                                               | Additional inbound silence after the ping before the turn fails.                                                                               |
 | `PI_XAI_WS_IDLE_TIMEOUT_MS`     | `300000`                                                              | Idle milliseconds before the retained socket closes. Any durable checkpoint remains available until process exit or explicit disposal.         |
-| `PI_XAI_WS_MAX_AGE_MS`          | `1440000`                                                             | Maximum socket age. The default stays below xAI's 25-minute connection limit.                                                                  |
-| `PI_XAI_WS_STORE`               | unset                                                                 | Override stored-response continuation. `1` or `true` enables it; any other defined value disables it.                                          |
-| `PI_XAI_WS_DEBUG`               | unset                                                                 | Set to `1` for lifecycle, request-shape, and recovery diagnostics. Logs exclude request data, credentials, generated text, and tool arguments. |
+| `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Maximum socket age. The default stays below xAI's 25-minute connection limit.                                                                  |
+| `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `220000`                                                              | Safety threshold for stored mode. At or above this estimated request size, calls switch to `store: false` until compaction reduces the context. |
+| `PI_XAI_WS_STORE`                           | unset                                                                 | Override stored-response continuation. `1` or `true` enables it; any other defined value disables it.                                          |
+| `PI_XAI_WS_DEBUG`                           | unset                                                                 | Set to `1` for lifecycle, request-shape, and recovery diagnostics. Logs exclude request data, credentials, generated text, and tool arguments. |
 
 With `cacheRetention: "none"`, the extension omits `prompt_cache_key` and
 `x-grok-conv-id`.
@@ -105,6 +106,13 @@ variable `PI_XAI_WS_STORE` takes precedence when it is defined, including
 supported because a repository must not opt users into server-side retention.
 A missing, malformed, unreadable, or non-boolean config remains safely off.
 
+Stored mode also accepts an optional positive integer
+`maxStoredContextTokens`. It defaults to 220,000 and can be overridden by a
+valid `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. Invalid environment values fall
+back to the global config and then the default. This is a safety boundary below
+the provider limit observed on long agentic responses, not a model
+context-window setting.
+
 ## How it works
 
 - A Pi session reuses one WebSocket and serializes model calls through it.
@@ -114,8 +122,13 @@ A missing, malformed, unreadable, or non-boolean config remains safely off.
   `PI_XAI_WS_STORE=1`, and a nonempty Pi session ID, calls use `store: true` and
   `previous_response_id` continuation. Same-socket calls send only the
   newest items. After reconnecting, the request resumes from the latest durable
-  response checkpoint and includes every locally recorded item since it. Calls
-  without a session ID remain `store: false`. See
+  response checkpoint and includes every locally recorded item since it. When
+  the estimated request context reaches the stored-context safety threshold, the
+  extension clears continuation state, warns once, and sends complete local
+  history with `store: false` until compaction reduces the context. The estimate
+  combines reliable provider usage, trailing messages, and the prepared payload,
+  so a large new tool result is included before the next request. Calls without
+  a session ID remain `store: false`. See
   [Stored-response continuation](docs/transport.md#stored-response-continuation).
 - Encrypted Responses reasoning remains in local history and can be sent with
   the next request.

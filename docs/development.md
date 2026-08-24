@@ -23,9 +23,10 @@ catalog and verifies that `grok-4.6` still resolves to `openai-responses`.
 | --- | --- |
 | `src/index.ts` | Extension entry point. |
 | `src/provider.ts` | xAI provider registration and API matching. |
-| `src/stream.ts` | Pi stream setup, hooks, output projection, and error completion. |
+| `src/stream.ts` | Pi stream setup, hooks, storage safety enforcement, output projection, and error completion. |
 | `src/payload.ts` | Pi option preparation, full-context payloads, tools, reasoning, headers, and cache affinity. |
 | `src/continuation.ts` | Stored-response chain planning, canonical prefix digests, and rejection detection. |
+| `src/stored-context.ts` | Context-usage inspection and the one-shot stored-limit warning. |
 | `src/history.ts` | Responses and legacy thinking-signature handling. |
 | `src/config.ts` | Global `getAgentDir()/pi-xai-ws.json` loading, WebSocket URL safety, and environment settings. |
 | `src/liveness.ts` | Ping-on-silence state machine. |
@@ -106,6 +107,18 @@ Tests cover dates, custom `toJSON` methods, accessors, class instances, sparse
 arrays, and undefined array values. Avoid object-spread-only normalization,
 which does not match the actual JSON wire representation.
 
+Stored mode must also enforce `maxStoredContextTokens` after the payload hook.
+Combine the latest reliable provider total usage with estimated trailing
+messages, and compare that with an estimate of the normalized prepared request.
+Recognize both raw compaction-summary messages and Pi's converted prefixed-user
+shape, then ignore retained pre-compaction usage by timestamp. Without reliable
+usage, estimate all current messages instead of failing open. Normalize early
+only when storage is configured and mark that payload for the pool so custom
+`toJSON` behavior still runs once. The default storage-off path skips the safety
+estimate. At the threshold, force `store: false`, remove continuation state, and
+send full local history. Record the exact stream decision for the extension
+warning. Never retry `Response is too large to store` after output begins.
+
 ## WebSocket changes
 
 `src/ws-events.ts` owns both individual sockets and the session pool. Keep these
@@ -154,6 +167,7 @@ xAI. It should prove:
 - Malformed protocol data
 - Repeated and cycling socket-local response IDs across multiple reconnects
 - Missing stored-response references and one bounded full-context fallback
+- Proactive storage downgrade at the configured context-token boundary
 
 The catalog integration test checks Pi's current remote model metadata. Keep it
 outside `npm test` so routine local tests remain deterministic.

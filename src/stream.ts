@@ -5,7 +5,11 @@ import {
     type Model,
     type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { resolveWsUrl, storeResponsesEnabled } from "./config.ts";
+import {
+    resolveMaxStoredContextTokens,
+    resolveWsUrl,
+    storeResponsesEnabled,
+} from "./config.ts";
 import { normalizeXaiErrorMessage } from "./errors.ts";
 import { processResponsesStreamFn } from "./pi-ai-api.ts";
 import {
@@ -15,7 +19,14 @@ import {
     resolveApiKey,
     upgradeHeaders,
 } from "./payload.ts";
-import { iterateXaiWsSessionEvents } from "./ws-events.ts";
+import {
+    estimateStoredRequestTokens,
+    setStoredContextSafetyActive,
+} from "./stored-context.ts";
+import {
+    iterateXaiWsSessionEvents,
+    normalizeWireRecordWithSize,
+} from "./ws-events.ts";
 
 export function streamXaiResponsesWs(
     model: Model<"openai-responses">,
@@ -46,14 +57,41 @@ export function streamXaiResponsesWs(
         try {
             const apiKey = resolveApiKey(options);
             const preparedOptions = prepareResponseOptions(model, context, options, apiKey);
-            const storeResponses = storeResponsesEnabled() &&
+            const storageConfigured = storeResponsesEnabled() &&
                 Boolean(preparedOptions.sessionId?.trim());
             let payload = buildResponseCreate(model, context, preparedOptions);
             const nextPayload = await preparedOptions.onPayload?.(payload, model);
             if (nextPayload !== undefined && nextPayload !== null && typeof nextPayload === "object") {
                 payload = nextPayload as Record<string, unknown>;
             }
-            payload = { ...payload, store: storeResponses };
+
+            let payloadNormalized = false;
+            let storeResponses = false;
+            if (storageConfigured) {
+                const normalized = normalizeWireRecordWithSize(payload);
+                payload = normalized.payload;
+                payloadNormalized = true;
+                const contextTokens = estimateStoredRequestTokens(
+                    context.messages,
+                    normalized.tokenEstimate,
+                );
+                const maxStoredContextTokens = resolveMaxStoredContextTokens();
+                storeResponses = contextTokens < maxStoredContextTokens;
+                if (!storeResponses && process.env.PI_XAI_WS_DEBUG === "1") {
+                    process.stderr.write(
+                        `[pi-xai-ws] storage disabled for oversized context context_tokens=${contextTokens} threshold=${maxStoredContextTokens}\n`,
+                    );
+                }
+            }
+            setStoredContextSafetyActive(
+                preparedOptions.sessionId,
+                storageConfigured && !storeResponses,
+            );
+            if (payloadNormalized) {
+                payload.store = storeResponses;
+            } else {
+                payload = { ...payload, store: storeResponses };
+            }
             delete payload.previous_response_id;
 
             stream.push({ type: "start", partial: output });

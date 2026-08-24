@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { cacheAffinityEnabled, resolveWsUrl, storeResponsesEnabled } from "../src/config.ts";
+import {
+    DEFAULT_MAX_STORED_CONTEXT_TOKENS,
+    cacheAffinityEnabled,
+    resolveMaxStoredContextTokens,
+    resolveWsUrl,
+    storeResponsesEnabled,
+} from "../src/config.ts";
 
 function withConfigPath(run: (configPath: string) => void): void {
     const tmpRoot = join(process.cwd(), "tmp");
@@ -91,6 +97,40 @@ describe("storeResponsesEnabled", () => {
                 delete process.env.PI_XAI_WS_STORE;
             } else {
                 process.env.PI_XAI_WS_STORE = previous;
+            }
+        }
+    });
+});
+
+describe("resolveMaxStoredContextTokens", () => {
+    it("uses a safe default and accepts positive integer overrides", () => {
+        const previous = process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
+        try {
+            delete process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
+            withConfigPath((configPath) => {
+                assert.equal(
+                    resolveMaxStoredContextTokens(configPath),
+                    DEFAULT_MAX_STORED_CONTEXT_TOKENS,
+                );
+                writeFileSync(configPath, JSON.stringify({ maxStoredContextTokens: 180_000 }));
+                assert.equal(resolveMaxStoredContextTokens(configPath), 180_000);
+                process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS = "190000";
+                assert.equal(resolveMaxStoredContextTokens(configPath), 190_000);
+                for (const invalid of ["", "0", "-1", "1.5", "invalid"]) {
+                    process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS = invalid;
+                    assert.equal(resolveMaxStoredContextTokens(configPath), 180_000);
+                }
+                writeFileSync(configPath, JSON.stringify({ maxStoredContextTokens: 0 }));
+                assert.equal(
+                    resolveMaxStoredContextTokens(configPath),
+                    DEFAULT_MAX_STORED_CONTEXT_TOKENS,
+                );
+            });
+        } finally {
+            if (previous === undefined) {
+                delete process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
+            } else {
+                process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS = previous;
             }
         }
     });

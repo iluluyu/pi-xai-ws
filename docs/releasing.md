@@ -95,6 +95,14 @@ Verify these facts:
 Generated wording is not a useful assertion. Record counts and request shape
 instead.
 
+Run another stored-mode probe with the threshold set just above the prepared
+first-request estimate and below the first response's reported context usage.
+With the 2026-08-23 catalog and default tools, 14,300 tokens provides that
+boundary. Require the first request to use `store: true`, every later request to
+use full local history with `store: false`, one warning notification, and no
+aborted or failed assistant message. This exercises the safety downgrade without
+constructing a provider-limit-sized fixture.
+
 When validating the opt-in stored-response mode, set `storeResponses: true` in
 `getAgentDir()/pi-xai-ws.json`, leave `PI_XAI_WS_STORE` unset, and run a separate
 multi-turn probe with a nonempty Pi session ID and `PI_XAI_WS_DEBUG=1`. Require
