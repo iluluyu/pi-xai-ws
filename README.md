@@ -70,7 +70,7 @@ model output begins.
 | ------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PI_XAI_WS_URL`                 | Derived from `model.baseUrl`, otherwise `wss://api.x.ai/v1/responses` | WebSocket URL. Set this when `xai.baseUrl` does not use `api.x.ai` so proxy credentials are not sent to public xAI.                            |
 | `PI_XAI_WS_PING_INTERVAL_MS`    | `15000`                                                               | Inbound silence in milliseconds before a protocol ping.                                                                                        |
-| `PI_XAI_WS_LIVENESS_TIMEOUT_MS` | `60000`                                                               | Additional inbound silence after the ping before the turn fails.                                                                               |
+| `PI_XAI_WS_LIVENESS_TIMEOUT_MS` | Pi's stream timeout                                                    | Additional inbound silence after the ping before the turn fails. When unset, the combined ping and liveness window follows Pi's `timeoutMs`, normally 300 seconds. |
 | `PI_XAI_WS_IDLE_TIMEOUT_MS`     | `300000`                                                              | Idle milliseconds before the retained socket closes. Any durable checkpoint remains available until process exit or explicit disposal.         |
 | `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Maximum socket age. The default stays below xAI's 25-minute connection limit.                                                                  |
 | `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `220000`                                                              | Safety threshold for stored mode. At or above this estimated request size, calls switch to `store: false` until compaction reduces the context. |
@@ -78,7 +78,9 @@ model output begins.
 | `PI_XAI_WS_DEBUG`                           | unset                                                                 | Set to `1` for lifecycle, request-shape, and recovery diagnostics. Logs exclude request data, credentials, generated text, and tool arguments. |
 
 With `cacheRetention: "none"`, the extension omits `prompt_cache_key` and
-`x-grok-conv-id`.
+`x-grok-conv-id`. Pi's stream timeout controls the default maximum inbound
+silence, while `PI_XAI_WS_LIVENESS_TIMEOUT_MS` remains an explicit transport
+override for troubleshooting.
 
 ### Global package config
 

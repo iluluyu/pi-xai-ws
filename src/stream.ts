@@ -7,10 +7,12 @@ import {
 } from "@earendil-works/pi-ai";
 import {
     resolveMaxStoredContextTokens,
+    resolveRequestLiveness,
     resolveWsUrl,
     storeResponsesEnabled,
 } from "./config.ts";
 import { normalizeXaiErrorMessage } from "./errors.ts";
+import { sanitizeContextMessages } from "./history.ts";
 import { processResponsesStreamFn } from "./pi-ai-api.ts";
 import {
     buildResponseCreate,
@@ -56,10 +58,11 @@ export function streamXaiResponsesWs(
 
         try {
             const apiKey = resolveApiKey(options);
-            const preparedOptions = prepareResponseOptions(model, context, options, apiKey);
+            const providerContext = sanitizeContextMessages(context);
+            const preparedOptions = prepareResponseOptions(model, providerContext, options, apiKey);
             const storageConfigured = storeResponsesEnabled() &&
                 Boolean(preparedOptions.sessionId?.trim());
-            let payload = buildResponseCreate(model, context, preparedOptions);
+            let payload = buildResponseCreate(model, providerContext, preparedOptions);
             const nextPayload = await preparedOptions.onPayload?.(payload, model);
             if (nextPayload !== undefined && nextPayload !== null && typeof nextPayload === "object") {
                 payload = nextPayload as Record<string, unknown>;
@@ -72,7 +75,7 @@ export function streamXaiResponsesWs(
                 payload = normalized.payload;
                 payloadNormalized = true;
                 const contextTokens = estimateStoredRequestTokens(
-                    context.messages,
+                    providerContext.messages,
                     normalized.tokenEstimate,
                 );
                 const maxStoredContextTokens = resolveMaxStoredContextTokens();
@@ -96,6 +99,12 @@ export function streamXaiResponsesWs(
 
             stream.push({ type: "start", partial: output });
 
+            const requestLiveness = resolveRequestLiveness(preparedOptions.timeoutMs);
+            if (process.env.PI_XAI_WS_DEBUG === "1") {
+                process.stderr.write(
+                    `[pi-xai-ws] timeouts connect_ms=${preparedOptions.websocketConnectTimeoutMs ?? "default"} ping_ms=${requestLiveness.pingIntervalMs} idle_after_ping_ms=${requestLiveness.livenessTimeoutMs}\n`,
+                );
+            }
             const events = iterateXaiWsSessionEvents({
                 url: resolveWsUrl(model.baseUrl),
                 headers: upgradeHeaders(apiKey, preparedOptions),
@@ -103,6 +112,8 @@ export function streamXaiResponsesWs(
                 sessionId: preparedOptions.sessionId,
                 signal: preparedOptions.signal,
                 connectTimeoutMs: preparedOptions.websocketConnectTimeoutMs,
+                livenessTimeoutMs: requestLiveness.livenessTimeoutMs,
+                pingIntervalMs: requestLiveness.pingIntervalMs,
                 onOpen: (response) => preparedOptions.onResponse?.(response, model),
                 projectStoredOutput: () => {
                     if (

@@ -56,4 +56,36 @@ describe("sanitizeContextMessages", () => {
             "reasoning_content",
         );
     });
+
+    it("removes failed and aborted assistant attempts from provider context", () => {
+        const context = {
+            messages: [
+                { role: "user", content: "start" },
+                {
+                    role: "assistant",
+                    content: [{ type: "text", text: "partial failure" }],
+                    stopReason: "error",
+                },
+                {
+                    role: "assistant",
+                    content: [{ type: "text", text: "partial abort" }],
+                    stopReason: "aborted",
+                },
+                { role: "assistant", content: [{ type: "text", text: "complete" }], stopReason: "stop" },
+                { role: "user", content: "continue" },
+            ],
+        };
+
+        const sanitized = sanitizeContextMessages(context);
+
+        assert.deepEqual(
+            sanitized.messages.map((message) =>
+                typeof message === "object" && message !== null && "role" in message
+                    ? (message as { role: string }).role
+                    : "unknown"
+            ),
+            ["user", "assistant", "user"],
+        );
+        assert.equal(context.messages.length, 5);
+    });
 });

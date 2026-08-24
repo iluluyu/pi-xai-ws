@@ -121,6 +121,32 @@ export function resolveLivenessTimeoutMs(): number {
     return readPositiveInt("PI_XAI_WS_LIVENESS_TIMEOUT_MS", DEFAULT_LIVENESS_TIMEOUT_MS);
 }
 
+export function resolveRequestLiveness(streamTimeoutMs?: number): {
+    pingIntervalMs: number;
+    livenessTimeoutMs: number;
+} {
+    const configuredPingIntervalMs = resolvePingIntervalMs();
+    const normalizedStreamTimeoutMs = positiveInteger(streamTimeoutMs);
+    if (normalizedStreamTimeoutMs === undefined) {
+        return {
+            pingIntervalMs: configuredPingIntervalMs,
+            livenessTimeoutMs: resolveLivenessTimeoutMs(),
+        };
+    }
+    const pingIntervalMs = Math.min(
+        configuredPingIntervalMs,
+        Math.max(1, Math.floor(normalizedStreamTimeoutMs / 2)),
+    );
+    const explicitLivenessTimeoutMs = positiveInteger(
+        process.env.PI_XAI_WS_LIVENESS_TIMEOUT_MS,
+    );
+    return {
+        pingIntervalMs,
+        livenessTimeoutMs:
+            explicitLivenessTimeoutMs ?? Math.max(1, normalizedStreamTimeoutMs - pingIntervalMs),
+    };
+}
+
 export function resolveWsIdleTimeoutMs(): number {
     return readPositiveInt("PI_XAI_WS_IDLE_TIMEOUT_MS", DEFAULT_WS_IDLE_TIMEOUT_MS);
 }

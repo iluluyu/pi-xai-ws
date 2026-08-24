@@ -70,6 +70,30 @@ function send(socket: WebSocket, event: Record<string, unknown>): void {
 }
 
 describe("stream stored-response continuation", () => {
+    it("passes Pi's stream timeout through as the WebSocket liveness budget", async () => {
+        const originalIterate = defaultXaiWsSessionPool.iterate;
+        let capturedOptions: Parameters<typeof defaultXaiWsSessionPool.iterate>[0] | undefined;
+        defaultXaiWsSessionPool.iterate = async function* (options) {
+            capturedOptions = options;
+            yield {
+                response: { id: "response-liveness", output: [], status: "completed" },
+                type: "response.completed",
+            };
+        };
+
+        try {
+            await collectMessage(
+                responsesModel(),
+                { messages: [{ role: "user", content: "first", timestamp: 1 }] },
+                { timeoutMs: 300_000 },
+            );
+            assert.equal(capturedOptions?.pingIntervalMs, 15_000);
+            assert.equal(capturedOptions?.livenessTimeoutMs, 285_000);
+        } finally {
+            defaultXaiWsSessionPool.iterate = originalIterate;
+        }
+    });
+
     it("clears an existing continuation before a trailing tool result crosses the storage threshold", async () => {
         const requests: Array<Record<string, unknown>> = [];
         const server = new WebSocketServer({ port: 0 });

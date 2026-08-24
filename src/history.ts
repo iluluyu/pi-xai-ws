@@ -32,6 +32,12 @@ function sanitizeContentBlock(block: unknown): unknown {
     return rest;
 }
 
+function isFailedAssistantMessage(message: unknown): boolean {
+    return isRecord(message) &&
+        message.role === "assistant" &&
+        (message.stopReason === "error" || message.stopReason === "aborted");
+}
+
 function sanitizeMessage(message: unknown): unknown {
     if (!isRecord(message) || message.role !== "assistant" || !Array.isArray(message.content)) {
         return message;
@@ -45,6 +51,8 @@ function sanitizeMessage(message: unknown): unknown {
 export function sanitizeContextMessages<T extends { messages: readonly unknown[] }>(context: T): T {
     return {
         ...context,
-        messages: context.messages.map(sanitizeMessage),
+        messages: context.messages
+            .filter((message) => !isFailedAssistantMessage(message))
+            .map(sanitizeMessage),
     };
 }

@@ -116,14 +116,16 @@ The next request closes the retained socket and opens one with the new values.
 ## Liveness failures
 
 The default healthcheck sends a protocol ping after 15 seconds without an
-inbound frame and allows another 60 seconds for any response. The transport
-also enables TCP keepalive with a 15-second initial delay to detect broken
-network paths independently of WebSocket control-frame handling.
+inbound frame and follows Pi's configured stream-idle timeout, normally 300
+seconds total. The transport also enables TCP keepalive with a 15-second initial
+delay to detect broken network paths independently of WebSocket control-frame
+handling.
 
-If a slow but healthy connection repeatedly reaches the liveness timeout, raise
-`PI_XAI_WS_LIVENESS_TIMEOUT_MS`. Avoid shortening it below normal model startup
-time. Valid Grok requests have been observed with more than 25 seconds of
-inbound silence.
+Set `PI_XAI_WS_LIVENESS_TIMEOUT_MS` only when the post-ping window needs an
+explicit transport override. Avoid shortening it below normal model startup or
+buffered function-call time. xAI documents streamed function calls as one whole
+chunk, so a healthy Grok request can remain silent while generating its
+arguments.
 
 If a dead connection answers WebSocket pings but its request worker has stopped,
 the transport cannot distinguish it from a live connection. Apply a turn-level
@@ -151,9 +153,11 @@ xAI WebSocket connection-limit failure before model output.
 
 The extension does not retry malformed frames, queue overflows, local payload
 limits, aborts, or failures after output starts. Reasoning summaries, refusals,
-function-call arguments, and custom-tool input all count as output. Pi may
-separately start a new assistant attempt when its configured retry policy
-classifies the reported error as transient.
+function-call arguments, custom-tool input, and provider-tool lifecycle events
+all count as output. Pi may separately start a new assistant attempt when its
+configured retry policy classifies the reported error as transient. Failed and
+aborted assistant attempts remain visible in Pi's session log but are excluded
+from future xAI request context.
 
 With stored continuation enabled, xAI may reuse one response ID for multiple
 successful calls on the same socket. That ID advances the socket-local head but

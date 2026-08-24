@@ -357,6 +357,35 @@ describe("XaiWsSessionPool", () => {
         }
     });
 
+    it("treats provider tool lifecycle events as output and does not replay", async () => {
+        const eventTypes = [
+            "response.code_execution_call.in_progress",
+            "response.code_interpreter_call.in_progress",
+            "response.file_search_call.in_progress",
+            "response.mcp_call.in_progress",
+            "response.web_search_call.in_progress",
+            "response.x_search_call.in_progress",
+        ];
+        for (const type of eventTypes) {
+            const harness = await createHarness((socket) => {
+                socket.send(JSON.stringify({ type }));
+                socket.close(1011, `after ${type}`);
+            });
+            const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+            try {
+                await assert.rejects(
+                    () => collect(pool, requestOptions(harness.url, [{ role: "user", text: "full" }])),
+                    new RegExp(`after ${type.replaceAll(".", "\\.")}`),
+                );
+                assert.equal(harness.requests.length, 1, type);
+                assert.equal(pool.inspect().counters.postOutputFailures, 1, type);
+            } finally {
+                pool.closeAll();
+                await harness.close();
+            }
+        }
+    });
+
     it("closes a session socket on abort", async () => {
         let requestSeen!: () => void;
         const seen = new Promise<void>((resolve) => {

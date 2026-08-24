@@ -260,13 +260,16 @@ The default sequence is:
 
 1. Wait 15 seconds without an inbound frame.
 2. Send an RFC 6455 protocol ping.
-3. Wait another 60 seconds for any inbound frame.
+3. Keep waiting within Pi's configured stream-idle timeout, normally 300 seconds total.
 4. Fail the request and close the socket if the connection remains silent.
 
-The post-ping window was raised from 10 seconds after live requests showed more
-than 25 seconds of valid inbound silence. During other probes, pongs could wait
-behind active writes while response deltas continued arriving. Counting every
-inbound frame avoids declaring those connections dead.
+`PI_XAI_WS_LIVENESS_TIMEOUT_MS` explicitly replaces the post-ping portion when
+set. Otherwise the extension subtracts the ping interval from Pi's `timeoutMs`
+so its watchdog does not terminate a healthy stream before Pi's configured
+budget. This matters for xAI function calls, which xAI documents as arriving
+whole in one streaming chunk rather than as incremental argument deltas.
+Counting every inbound frame still avoids declaring responsive connections
+dead.
 
 A remote edge that still answers protocol pings after its request worker dies
 cannot be detected by this healthcheck. Pi or the caller must apply a broader
@@ -282,8 +285,9 @@ The transport permits one pre-output retry when all of these conditions hold:
   WebSocket connection limit before output.
 
 Output includes text, reasoning and reasoning summaries, refusals, output
-items, function-call arguments, and custom-tool input. Once any such event
-arrives, the transport cannot safely restart the in-flight stream internally.
+items, function-call arguments, custom-tool input, and provider-tool lifecycle
+events such as web search, code interpreter, file search, and MCP calls. Once
+any such event arrives, the transport cannot safely restart the in-flight stream internally.
 The transport reports an error instead, after which Pi's separate retry policy
 may start a new assistant attempt from local context.
 

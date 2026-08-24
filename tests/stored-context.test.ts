@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { sanitizeContextMessages } from "../src/history.ts";
 import {
     estimateStoredRequestTokens,
     registerStoredContextSafety,
@@ -63,6 +64,17 @@ describe("estimateStoredRequestTokens", () => {
             assistantUsage(210_000, 10),
             assistantUsage(225_000, 20, "error"),
         ], 0), 225_000);
+    });
+
+    it("estimates the filtered provider context used by the live stream", () => {
+        const context = sanitizeContextMessages({
+            messages: [
+                assistantUsage(210_000, 10),
+                assistantUsage(225_000, 20, "error"),
+            ],
+        });
+
+        assert.equal(estimateStoredRequestTokens(context.messages, 0), 210_000);
     });
 
     it("counts a large trailing tool result before the next stored request", () => {

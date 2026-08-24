@@ -34,13 +34,19 @@ const TERMINAL_TYPES = new Set([
 ]);
 
 const OUTPUT_EVENT_PREFIXES = [
+    "response.code_execution_call.",
+    "response.code_interpreter_call.",
     "response.content_part.",
     "response.custom_tool_call_input.",
+    "response.file_search_call.",
     "response.function_call_arguments.",
+    "response.mcp_call.",
     "response.output_item.",
     "response.output_text.",
     "response.reasoning",
     "response.refusal.",
+    "response.web_search_call.",
+    "response.x_search_call.",
 ];
 
 export class XaiWsTransportError extends Error {
@@ -582,8 +588,17 @@ class XaiWsSocket {
         };
         state.liveness = new SocketLiveness(
             () => {
-                if (this.state === state && socket.readyState === WebSocket.OPEN) {
+                if (this.state !== state || socket.readyState !== WebSocket.OPEN) {
+                    return;
+                }
+                try {
                     socket.ping();
+                } catch (error) {
+                    const pingError = socketDropError(
+                        error,
+                        this.currentRequest?.outputStarted ?? false,
+                    );
+                    this.close("ping failure", pingError);
                 }
             },
             (reason) => {

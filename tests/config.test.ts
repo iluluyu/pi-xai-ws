@@ -6,6 +6,7 @@ import {
     DEFAULT_MAX_STORED_CONTEXT_TOKENS,
     cacheAffinityEnabled,
     resolveMaxStoredContextTokens,
+    resolveRequestLiveness,
     resolveWsUrl,
     storeResponsesEnabled,
 } from "../src/config.ts";
@@ -131,6 +132,41 @@ describe("resolveMaxStoredContextTokens", () => {
                 delete process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
             } else {
                 process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS = previous;
+            }
+        }
+    });
+});
+
+describe("resolveRequestLiveness", () => {
+    it("uses Pi's stream timeout unless the extension timeout is explicit", () => {
+        const previousPing = process.env.PI_XAI_WS_PING_INTERVAL_MS;
+        const previousLiveness = process.env.PI_XAI_WS_LIVENESS_TIMEOUT_MS;
+        try {
+            delete process.env.PI_XAI_WS_PING_INTERVAL_MS;
+            delete process.env.PI_XAI_WS_LIVENESS_TIMEOUT_MS;
+            assert.deepEqual(resolveRequestLiveness(300_000), {
+                pingIntervalMs: 15_000,
+                livenessTimeoutMs: 285_000,
+            });
+            assert.deepEqual(resolveRequestLiveness(10_000), {
+                pingIntervalMs: 5_000,
+                livenessTimeoutMs: 5_000,
+            });
+            process.env.PI_XAI_WS_LIVENESS_TIMEOUT_MS = "45000";
+            assert.deepEqual(resolveRequestLiveness(300_000), {
+                pingIntervalMs: 15_000,
+                livenessTimeoutMs: 45_000,
+            });
+        } finally {
+            if (previousPing === undefined) {
+                delete process.env.PI_XAI_WS_PING_INTERVAL_MS;
+            } else {
+                process.env.PI_XAI_WS_PING_INTERVAL_MS = previousPing;
+            }
+            if (previousLiveness === undefined) {
+                delete process.env.PI_XAI_WS_LIVENESS_TIMEOUT_MS;
+            } else {
+                process.env.PI_XAI_WS_LIVENESS_TIMEOUT_MS = previousLiveness;
             }
         }
     });
