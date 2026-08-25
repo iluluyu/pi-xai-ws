@@ -4,6 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_LIVENESS_TIMEOUT_MS, DEFAULT_PING_INTERVAL_MS } from "./liveness.ts";
 
 export const DEFAULT_WS_URL = "wss://api.x.ai/v1/responses";
+export const DEFAULT_LOOP_NOVELTY_THRESHOLD = 0.85;
 export const DEFAULT_MAX_STORED_CONTEXT_TOKENS = 220_000;
 export const DEFAULT_WS_IDLE_TIMEOUT_MS = 5 * 60_000;
 export const DEFAULT_WS_MAX_AGE_MS = 24 * 60_000;
@@ -19,6 +20,15 @@ function readPositiveInt(name: string, fallback: number): number {
         return fallback;
     }
     return Math.floor(value);
+}
+
+function ratio(value: unknown): number | undefined {
+    if (typeof value === "string" && value.trim() !== "") {
+        value = Number(value);
+    }
+    return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 1
+        ? value
+        : undefined;
 }
 
 export function cacheAffinityEnabled(cacheRetention?: string): boolean {
@@ -38,6 +48,15 @@ export function storeResponsesEnabled(configPath?: string): boolean {
         return normalized === "1" || normalized === "true";
     }
     return readGlobalConfig(configPath)?.storeResponses === true;
+}
+
+export function resolveLoopNoveltyThreshold(configPath?: string): number {
+    const envValue = ratio(process.env.PI_XAI_WS_LOOP_NOVELTY_THRESHOLD);
+    if (envValue !== undefined) {
+        return envValue;
+    }
+    const configured = readGlobalConfig(configPath)?.loopNoveltyThreshold;
+    return ratio(configured) ?? DEFAULT_LOOP_NOVELTY_THRESHOLD;
 }
 
 export function resolveMaxStoredContextTokens(configPath?: string): number {

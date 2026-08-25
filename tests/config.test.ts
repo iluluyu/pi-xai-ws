@@ -3,8 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
+    DEFAULT_LOOP_NOVELTY_THRESHOLD,
     DEFAULT_MAX_STORED_CONTEXT_TOKENS,
     cacheAffinityEnabled,
+    resolveLoopNoveltyThreshold,
     resolveMaxStoredContextTokens,
     resolveRequestLiveness,
     resolveWsUrl,
@@ -98,6 +100,32 @@ describe("storeResponsesEnabled", () => {
                 delete process.env.PI_XAI_WS_STORE;
             } else {
                 process.env.PI_XAI_WS_STORE = previous;
+            }
+        }
+    });
+});
+
+describe("resolveLoopNoveltyThreshold", () => {
+    it("accepts ratios from global config and the environment", () => {
+        const previous = process.env.PI_XAI_WS_LOOP_NOVELTY_THRESHOLD;
+        try {
+            delete process.env.PI_XAI_WS_LOOP_NOVELTY_THRESHOLD;
+            withConfigPath((configPath) => {
+                assert.equal(resolveLoopNoveltyThreshold(configPath), DEFAULT_LOOP_NOVELTY_THRESHOLD);
+                writeFileSync(configPath, JSON.stringify({ loopNoveltyThreshold: 0.9 }));
+                assert.equal(resolveLoopNoveltyThreshold(configPath), 0.9);
+                process.env.PI_XAI_WS_LOOP_NOVELTY_THRESHOLD = "0.95";
+                assert.equal(resolveLoopNoveltyThreshold(configPath), 0.95);
+                for (const invalid of ["", "0", "1.1", "invalid"]) {
+                    process.env.PI_XAI_WS_LOOP_NOVELTY_THRESHOLD = invalid;
+                    assert.equal(resolveLoopNoveltyThreshold(configPath), 0.9);
+                }
+            });
+        } finally {
+            if (previous === undefined) {
+                delete process.env.PI_XAI_WS_LOOP_NOVELTY_THRESHOLD;
+            } else {
+                process.env.PI_XAI_WS_LOOP_NOVELTY_THRESHOLD = previous;
             }
         }
     });

@@ -243,10 +243,15 @@ connection limit. The transport stops assigning new requests to a socket after
 therefore starts on a fresh socket after 18 minutes. This leaves time for a
 long-running turn before the hard limit.
 
-Reaching maximum age during a request marks the socket expired. The active call
-can settle, then the session closes the socket. A session also closes its socket
-after five idle minutes by default, but keeps its durable continuation checkpoint
-for the next connection.
+Reaching maximum age closes the socket even during an active request. Before
+model output, the transport may use its one bounded internal replay. After
+output, retryable socket, connection, and liveness failures include Pi's
+WebSocket wording so Pi's configured outer retry can start a fresh assistant
+attempt. Protocol, queue, and lifecycle failures remain non-retryable. Any xAI
+connection-limit frame retires its physical socket, including a frame received
+after a completed response or while the session is idle. A session also closes
+its socket after five idle minutes by default, but keeps its durable
+continuation checkpoint for the next connection.
 
 ## Liveness
 
@@ -298,7 +303,41 @@ against a response ID whose latest meaning existed only on the failed socket.
 
 Malformed JSON, non-object frames, inbound payload-limit failures, event queue
 overflow, lifecycle errors, and aborts never replay. Neither do provider errors
-other than the explicit pre-output WebSocket connection-limit signal.
+other than the explicit pre-output WebSocket connection-limit signal. A
+connection-limit signal after output retires the physical socket before the
+error reaches Pi, preventing an outer retry from reusing an exhausted socket.
+
+## Repetitive-output recovery
+
+`src/loop-recovery.ts` observes xAI assistant deltas through Pi's extension
+events. It keeps bounded state per content block and resets at turn and tool-call
+boundaries. The detector combines:
+
+- Exact adjacent-suffix detection over at most 8,192 recent characters.
+- Word 5-gram similarity across rolling 1,024-character windows after
+  normalizing whitespace, counters, and numbers.
+- A long-thinking backstop that checks whether at least 85 percent of the newest
+  8,000 characters' 5-grams already occurred in the preceding bounded history.
+
+Visible fenced code is excluded. The low-novelty ratio can be changed with
+`loopNoveltyThreshold` in the global package config or
+`PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`. Detection diagnostics contain only kind,
+period, character counts, provider, and model. Generated content is never
+logged.
+
+On the first detection, the extension aborts the active response, removes the
+repeated suffix and provider signatures from the finalized assistant message,
+and keeps at most 8,192 clean prefix characters. After Pi commits that sanitized
+message, the extension starts compaction with instructions to preserve the
+user's goal, completed tool work, repository state, constraints, and next step.
+A successful compaction queues one hidden model-visible recovery message. If Pi
+reports that the session is already compacted or too small to compact, recovery
+continues directly because the aborted assistant is already excluded from xAI
+context. Other compaction failures settle without retrying the same context.
+
+Automatic recovery is capped at two per session. A second recurrence within ten
+minutes is aborted and reported without another automatic compaction. This
+prevents the guard itself from creating an unbounded retry loop.
 
 ## Resource bounds
 
@@ -324,7 +363,9 @@ an unbounded list of parsed provider objects.
 xAI error envelopes can be direct, nested, or loosely typed. The transport
 normalizes them before Pi's Responses processor sees them. Recognized capacity
 messages keep xAI's original text and add Pi's `overloaded` marker so Pi can
-apply its own retry budget and backoff.
+apply its own retry budget and backoff. The exact
+`websocket_connection_limit_reached` code similarly gains a `WebSocket error`
+marker after the exhausted socket is retired.
 
 Pi's `AbortSignal` applies while waiting for a session, opening a socket,
 running the response hook, sending the request, and reading events. The active

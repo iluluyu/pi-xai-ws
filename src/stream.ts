@@ -26,6 +26,7 @@ import {
     setStoredContextSafetyActive,
 } from "./stored-context.ts";
 import {
+    isReplayableTransportError,
     iterateXaiWsSessionEvents,
     normalizeWireRecordWithSize,
 } from "./ws-events.ts";
@@ -160,7 +161,10 @@ export function streamXaiResponsesWs(
                 (error instanceof Error && (error.name === "AbortError" || error.message === "Request was aborted"));
             output.stopReason = aborted ? "aborted" : "error";
             const errorMessage = error instanceof Error ? error.message : String(error);
-            output.errorMessage = normalizeXaiErrorMessage(errorMessage);
+            output.errorMessage = normalizeXaiErrorMessage(
+                errorMessage,
+                isReplayableTransportError(error),
+            );
             stream.push({ type: "error", reason: output.stopReason, error: output });
             stream.end();
         }

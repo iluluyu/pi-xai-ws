@@ -10,7 +10,10 @@ import type {
 import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
 import { WebSocketServer, type WebSocket } from "ws";
 import { streamXaiResponsesWs } from "../src/stream.ts";
-import { defaultXaiWsSessionPool } from "../src/ws-events.ts";
+import {
+    defaultXaiWsSessionPool,
+    XaiWsTransportError,
+} from "../src/ws-events.ts";
 
 const previousStore = process.env.PI_XAI_WS_STORE;
 const previousThreshold = process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
@@ -89,6 +92,28 @@ describe("stream stored-response continuation", () => {
             );
             assert.equal(capturedOptions?.pingIntervalMs, 15_000);
             assert.equal(capturedOptions?.livenessTimeoutMs, 285_000);
+        } finally {
+            defaultXaiWsSessionPool.iterate = originalIterate;
+        }
+    });
+
+    it("marks exhausted socket transport failures for Pi's outer retry", async () => {
+        const originalIterate = defaultXaiWsSessionPool.iterate;
+        defaultXaiWsSessionPool.iterate = async function* () {
+            throw new XaiWsTransportError("read ECONNRESET", {
+                kind: "socket",
+                outputStarted: true,
+            });
+        };
+
+        try {
+            await assert.rejects(
+                () => collectMessage(
+                    responsesModel(),
+                    { messages: [{ role: "user", content: "first", timestamp: 1 }] },
+                ),
+                /WebSocket error: read ECONNRESET/,
+            );
         } finally {
             defaultXaiWsSessionPool.iterate = originalIterate;
         }

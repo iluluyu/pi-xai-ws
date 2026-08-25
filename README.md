@@ -40,8 +40,9 @@ pi remove npm:@mwolson-org/pi-xai-ws
 
 ## Recommended Pi retry settings
 
-The extension marks recognized xAI capacity errors as "overloaded" so Pi can
-apply its agent-level retry policy. Pi enables that policy by default. For
+The extension marks recognized xAI capacity errors as "overloaded" and
+retryable WebSocket transport failures as socket errors so Pi can apply its
+agent-level retry policy. Pi enables that policy by default. For
 longer Grok jobs, these optional agent-wide settings raise the retry budget and
 backoff for every provider. Merge them into the global Pi settings file at
 `getAgentDir()/settings.json`, normally `~/.pi/agent/settings.json`:
@@ -71,8 +72,9 @@ model output begins.
 | `PI_XAI_WS_URL`                 | Derived from `model.baseUrl`, otherwise `wss://api.x.ai/v1/responses` | WebSocket URL. Set this when `xai.baseUrl` does not use `api.x.ai` so proxy credentials are not sent to public xAI.                            |
 | `PI_XAI_WS_PING_INTERVAL_MS`    | `15000`                                                               | Inbound silence in milliseconds before a protocol ping.                                                                                        |
 | `PI_XAI_WS_LIVENESS_TIMEOUT_MS` | Pi's stream timeout                                                    | Additional inbound silence after the ping before the turn fails. When unset, the combined ping and liveness window follows Pi's `timeoutMs`, normally 300 seconds. |
-| `PI_XAI_WS_IDLE_TIMEOUT_MS`     | `300000`                                                              | Idle milliseconds before the retained socket closes. Any durable checkpoint remains available until process exit or explicit disposal.         |
-| `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Maximum socket age. The default stays below xAI's 25-minute connection limit.                                                                  |
+| `PI_XAI_WS_IDLE_TIMEOUT_MS`                 | `300000`                                                              | Idle milliseconds before the retained socket closes. Any durable checkpoint remains available until process exit or explicit disposal.         |
+| `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`          | `0.85`                                                                | Fraction of recent thinking 5-grams that must already exist before the long-output novelty backstop stops a response.                           |
+| `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Hard maximum socket age. The default interrupts and retries an active request before xAI's 25-minute connection limit.                          |
 | `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `220000`                                                              | Safety threshold for stored mode. At or above this estimated request size, calls switch to `store: false` until compaction reduces the context. |
 | `PI_XAI_WS_STORE`                           | unset                                                                 | Override stored-response continuation. `1` or `true` enables it; any other defined value disables it.                                          |
 | `PI_XAI_WS_DEBUG`                           | unset                                                                 | Set to `1` for lifecycle, request-shape, and recovery diagnostics. Logs exclude request data, credentials, generated text, and tool arguments. |
@@ -115,6 +117,10 @@ back to the global config and then the default. This is a safety boundary below
 the provider limit observed on long agentic responses, not a model
 context-window setting.
 
+The same global file may set `loopNoveltyThreshold` to a ratio above zero and at
+most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is
+`0.85`; invalid values fall back to the file and then the default.
+
 ## How it works
 
 - A Pi session reuses one WebSocket and serializes model calls through it.
@@ -144,6 +150,10 @@ context-window setting.
   `stop` and no text or tools, the extension injects one hidden same-run follow-up
   so Pi continues instead of settling. The first assistant of a run is left alone.
   Other providers are not nudged.
+- Bounded exact, near-duplicate, and low-novelty checks stop repetitive xAI
+  thinking or prose. The extension sanitizes the unfinished assistant message,
+  compacts the context when useful, and queues one hidden recovery turn. A
+  recurrence within ten minutes stops without another automatic compaction.
 - Sockets enable TCP keepalive and have fixed memory, age, and idle bounds.
 
 See [Transport design](docs/transport.md) for payload construction, lifecycle,

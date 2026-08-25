@@ -14,6 +14,7 @@ type WsHarness = {
     connectionCount: () => number;
     requests: RequestRecord[];
     close: () => Promise<void>;
+    sendToLatest: (event: Record<string, unknown>) => Promise<void>;
     url: string;
 };
 
@@ -24,10 +25,12 @@ async function createHarness(
     const wss = new WebSocketServer({ server: httpServer });
     const requests: RequestRecord[] = [];
     let connections = 0;
+    let latestSocket: WebSocket | undefined;
     const sockets = new Set<WebSocket>();
 
     wss.on("connection", (socket) => {
         const connection = ++connections;
+        latestSocket = socket;
         sockets.add(socket);
         socket.once("close", () => sockets.delete(socket));
         socket.on("message", (data) => {
@@ -55,6 +58,13 @@ async function createHarness(
             await new Promise<void>((resolve) => {
                 wss.close(() => httpServer.close(() => resolve()));
             });
+        },
+        sendToLatest: async (event) => {
+            const socket = latestSocket;
+            assert.ok(socket);
+            const closed = new Promise<void>((resolve) => socket.once("close", resolve));
+            socket.send(JSON.stringify(event));
+            await closed;
         },
         url: `ws://127.0.0.1:${address.port}`,
     };
@@ -507,6 +517,85 @@ describe("XaiWsSessionPool", () => {
         }
     });
 
+    it("retires a socket when the connection limit follows a completed response", async () => {
+        const harness = await createHarness((socket, _payload, requestNumber) => {
+            completed(socket, `response-${requestNumber}`);
+            if (requestNumber === 1) {
+                socket.send(JSON.stringify({
+                    code: "websocket_connection_limit_reached",
+                    message: "connection limit reached",
+                    type: "error",
+                }));
+            }
+        });
+        const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        try {
+            await collect(pool, requestOptions(harness.url, [{ role: "user", text: "first" }]));
+            await collect(pool, requestOptions(harness.url, [{ role: "user", text: "second" }]));
+
+            assert.equal(harness.connectionCount(), 2);
+            assert.equal(harness.requests[1]?.connection, 2);
+        } finally {
+            pool.closeAll();
+            await harness.close();
+        }
+    });
+
+    it("retires an idle socket when xAI reports the connection limit", async () => {
+        const harness = await createHarness((socket, _payload, requestNumber) => {
+            completed(socket, `response-${requestNumber}`);
+        });
+        const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        try {
+            await collect(pool, requestOptions(harness.url, [{ role: "user", text: "first" }]));
+            await harness.sendToLatest({
+                code: "websocket_connection_limit_reached",
+                message: "connection limit reached",
+                type: "error",
+            });
+            await collect(pool, requestOptions(harness.url, [{ role: "user", text: "second" }]));
+
+            assert.equal(harness.connectionCount(), 2);
+            assert.equal(harness.requests[1]?.connection, 2);
+        } finally {
+            pool.closeAll();
+            await harness.close();
+        }
+    });
+
+    it("retires a socket when the connection limit arrives after output", async () => {
+        const input = [{ role: "user", text: "full history" }];
+        const harness = await createHarness((socket, _payload, requestNumber) => {
+            if (requestNumber === 1) {
+                socket.send(JSON.stringify({
+                    delta: "partial output",
+                    type: "response.output_text.delta",
+                }));
+                socket.send(JSON.stringify({
+                    code: "websocket_connection_limit_reached",
+                    message: "connection limit reached",
+                    type: "error",
+                }));
+            } else {
+                completed(socket, "response-2");
+            }
+        });
+        const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        try {
+            const first = await collect(pool, requestOptions(harness.url, input));
+            await collect(pool, requestOptions(harness.url, input));
+
+            assert.equal(first.at(-1)?.type, "error");
+            assert.equal(harness.connectionCount(), 2);
+            assert.equal(harness.requests.length, 2);
+            assert.equal(harness.requests[1]?.connection, 2);
+            assert.equal(pool.inspect().counters.preOutputReplays, 0);
+        } finally {
+            pool.closeAll();
+            await harness.close();
+        }
+    });
+
     it("rejects a pre-aborted initial request without retaining an empty session", async () => {
         const harness = await createHarness((socket) => completed(socket, "unexpected"));
         const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
@@ -718,15 +807,49 @@ describe("XaiWsSessionPool", () => {
         }
     });
 
-    it("closes a socket that reaches maximum age during an active request", async () => {
+    it("interrupts an active request at the configured maximum socket age", async () => {
         const harness = await createHarness((socket, _payload, requestNumber) => {
+            socket.send(JSON.stringify({
+                delta: "started",
+                type: "response.output_text.delta",
+            }));
             setTimeout(() => completed(socket, `response-${requestNumber}`), 30);
         });
         const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10 });
         try {
-            await collect(pool, requestOptions(harness.url, [{ role: "user", text: "first" }]));
+            await assert.rejects(
+                () => collect(pool, requestOptions(harness.url, [{ role: "user", text: "first" }])),
+                /WebSocket closed: max age/,
+            );
 
+            assert.equal(harness.connectionCount(), 1);
             assert.equal(pool.inspect().openSockets, 0);
+            assert.equal(pool.inspect().counters.postOutputFailures, 1);
+            assert.equal(pool.inspect().counters.rotations, 1);
+        } finally {
+            pool.closeAll();
+            await harness.close();
+        }
+    });
+
+    it("replays once when maximum age interrupts before output", async () => {
+        const harness = await createHarness((socket, _payload, requestNumber) => {
+            if (requestNumber === 1) {
+                setTimeout(() => completed(socket, "stale-response"), 30);
+            } else {
+                completed(socket, "fresh-response");
+            }
+        });
+        const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10 });
+        try {
+            const events = await collect(
+                pool,
+                requestOptions(harness.url, [{ role: "user", text: "first" }]),
+            );
+
+            assert.equal(events.at(-1)?.type, "response.completed");
+            assert.equal(harness.connectionCount(), 2);
+            assert.equal(pool.inspect().counters.preOutputReplays, 1);
             assert.equal(pool.inspect().counters.rotations, 1);
         } finally {
             pool.closeAll();

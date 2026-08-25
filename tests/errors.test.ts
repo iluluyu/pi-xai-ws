@@ -21,6 +21,30 @@ describe("normalizeXaiErrorMessage", () => {
         );
     });
 
+    it("maps xAI's hard socket limit to Pi's retryable WebSocket vocabulary", () => {
+        const currentMessage =
+            "Error Code websocket_connection_limit_reached: Responses websocket connection limit reached (25 minutes). Create a new websocket connection to continue.";
+        assert.equal(
+            normalizeXaiErrorMessage(currentMessage),
+            `WebSocket error: ${currentMessage}`,
+        );
+        assert.equal(
+            normalizeXaiErrorMessage(`WebSocket error: ${currentMessage}`),
+            `WebSocket error: ${currentMessage}`,
+        );
+    });
+
+    it("marks retryable socket failures without marking protocol failures", () => {
+        assert.equal(
+            normalizeXaiErrorMessage("read ECONNRESET", true),
+            "WebSocket error: read ECONNRESET",
+        );
+        assert.equal(
+            normalizeXaiErrorMessage("xAI WebSocket sent invalid JSON"),
+            "xAI WebSocket sent invalid JSON",
+        );
+    });
+
     it("leaves normalized and unrelated errors unchanged", () => {
         const normalizedMessage =
             "Provider overloaded: The model is currently at capacity due to high demand.";

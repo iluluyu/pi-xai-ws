@@ -27,6 +27,8 @@ catalog and verifies that `grok-4.6` still resolves to `openai-responses`.
 | `src/payload.ts` | Pi option preparation, full-context payloads, tools, reasoning, headers, and cache affinity. |
 | `src/continuation.ts` | Stored-response chain planning, canonical prefix digests, and rejection detection. |
 | `src/empty-thinking.ts` | Same-run Grok recovery after a mid-loop thinking-only stop. |
+| `src/loop-recovery.ts` | Pi event integration for abort, sanitization, compaction, and bounded recovery. |
+| `src/repetition-detector.ts` | Bounded exact, near-duplicate, and low-novelty checks. |
 | `src/stored-context.ts` | Context-usage inspection and the one-shot stored-limit warning. |
 | `src/history.ts` | Responses and legacy thinking-signature handling. |
 | `src/config.ts` | Global `getAgentDir()/pi-xai-ws.json` loading, WebSocket URL safety, and environment settings. |
@@ -137,6 +139,8 @@ rules when adding or changing protocol events:
    request.
 8. All queues, frames, requests, and timers remain bounded.
 9. Disposal wakes waiters and prevents reconnects.
+10. Maximum socket age interrupts active requests before xAI's hard limit.
+11. Any connection-limit response retires its physical socket, including after output.
 
 When xAI adds an output event, update `isModelOutputEvent` before projecting the
 event. Missing an output type can cause a complete request to replay after the
@@ -150,9 +154,11 @@ test proving that the generator settles after that event.
 The test suite has three levels.
 
 Focused tests cover payloads, history filtering, URL protection, liveness, error
-normalization, provider registration, global config parsing, and environment
-override precedence. The test runner forces storage off before loading test
-files so a developer's global opt-in cannot change suite behavior.
+normalization, provider registration, repetition detection and recovery, global
+config parsing, and environment override precedence. Repetition fixtures must
+remain synthetic and must not include private session content. The test runner
+forces storage off before loading test files so a developer's global opt-in
+cannot change suite behavior.
 
 The local WebSocket harness covers framing and session behavior without calling
 xAI. It should prove:

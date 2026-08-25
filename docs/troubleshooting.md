@@ -135,7 +135,9 @@ timeout outside this extension when a strict deadline is required.
 
 A log entry for `request age` or `max age` is normal. The extension rotates
 before xAI's 25-minute connection limit and does not start new requests after
-75 percent of the configured maximum age.
+75 percent of the configured maximum age. Maximum age is a hard boundary: an
+active request is interrupted so Pi can retry it on a fresh socket rather than
+letting xAI terminate the generation one minute later.
 
 Frequent unexpected rotations usually mean one of these values changes between
 calls:
@@ -216,6 +218,26 @@ With `PI_XAI_WS_DEBUG=1`, a successful queue logs
 can appear as a `notify` activity row. A test-only latch,
 `PI_XAI_WS_TEST_NUDGE=1` or `getAgentDir()/pi-xai-ws.test-nudge`, treats any
 mid-loop no-tool stop as that case. Do not leave the latch enabled.
+
+## Grok output became repetitive
+
+The extension checks xAI thinking and visible prose for exact repetition,
+near-duplicate blocks with changing counters or timestamps, and very low
+novelty in long thinking. It excludes fenced code. On the first detection it
+aborts the response, records only bounded clean context, warns through Pi's UI,
+and starts compaction before one hidden recovery turn.
+
+A second recurrence within ten minutes is stopped without another compaction.
+If Pi reports that the session is already compacted or too small to compact, the
+extension continues directly because the aborted assistant is already excluded
+from xAI context. Other compaction failures are reported without a retry. This
+is intentional protection against an automatic recovery loop.
+
+The long-output backstop defaults to 85 percent repeated word 5-grams. Set a
+ratio above zero and at most one as `loopNoveltyThreshold` in the global config
+or `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`. Increase it if legitimate long reasoning
+triggers the backstop. Debug logs report detector metadata but never generated
+content.
 
 ## Package load failures
 

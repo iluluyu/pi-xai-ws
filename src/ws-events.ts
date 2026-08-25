@@ -341,7 +341,7 @@ function socketDropError(error: unknown, outputStarted: boolean): XaiWsTransport
     return new XaiWsTransportError(message, { outputStarted });
 }
 
-function isReplayableTransportError(error: unknown): error is XaiWsTransportError {
+export function isReplayableTransportError(error: unknown): error is XaiWsTransportError {
     return error instanceof XaiWsTransportError &&
         !isAbortError(error) &&
         (error.kind === "connect" || error.kind === "liveness" || error.kind === "socket");
@@ -657,9 +657,11 @@ class XaiWsSocket {
                             return;
                         }
                         state.expired = true;
-                        if (!this.currentRequest) {
-                            this.close("max age");
-                        }
+                        const error = new XaiWsTransportError("xAI WebSocket closed: max age", {
+                            kind: "socket",
+                            outputStarted: this.currentRequest?.outputStarted ?? false,
+                        });
+                        this.close("max age", error);
                     }, this.options.maxSocketAgeMs);
                     state.ageTimer.unref?.();
                     openDeferred.resolve();
@@ -702,8 +704,12 @@ class XaiWsSocket {
                 return;
             }
             const event = normalizeEvent(parsed);
+            const connectionLimitReached = isConnectionLimitReached(event);
             const pending = this.currentRequest;
             if (!pending || pending.socket !== state) {
+                if (connectionLimitReached) {
+                    this.close("connection limit");
+                }
                 return;
             }
             if (isModelOutputEvent(event)) {
@@ -725,6 +731,9 @@ class XaiWsSocket {
             pending.queue.push({ bytes: frameBytes, event });
             pending.queuedBytes += frameBytes;
             this.wake();
+            if (connectionLimitReached) {
+                this.close("connection limit");
+            }
         });
 
         socket.on("pong", () => {
@@ -941,11 +950,15 @@ class XaiWsSession {
                         if (isModelOutputEvent(event)) {
                             outputStarted = true;
                         }
-                        if (isConnectionLimitReached(event) && !transportReplayed && !outputStarted) {
+                        const connectionLimitReached = isConnectionLimitReached(event);
+                        if (connectionLimitReached && !transportReplayed && !outputStarted) {
                             transportReplayed = true;
                             this.counters.preOutputReplays += 1;
                             retryConnectionLimit = true;
                             break;
+                        }
+                        if (connectionLimitReached) {
+                            this.closeConnection("connection limit");
                         }
                         if (
                             storeResponses &&
