@@ -178,9 +178,11 @@ compaction entry to a prefixed user message before provider streaming, so the
 estimator recognizes both the raw extension shape and that wire-facing shape,
 then uses timestamps to reject retained older assistants. If no reliable usage
 exists, all current messages are estimated rather than allowing storage by
-default. The normalized prepared payload supplies a second estimate that
-includes system instructions, tools, payload-hook additions, and a large new
-tool result before it is sent.
+default. The guard measures that stored conversation size, not the unsliced
+local wire JSON. A live continuation still sends only new items. Using the full
+prepared payload JSON as a max() would disable storage while usage is still well
+under the limit. The prepared payload estimate is used only when there is no reliable provider
+usage yet.
 
 The opt-in stored path normalizes the post-hook payload once before estimating
 it and marks that record as already normalized for the session pool. The default

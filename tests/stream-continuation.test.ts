@@ -177,6 +177,62 @@ describe("stream stored-response continuation", () => {
         }
     });
 
+    it("keeps continuation when unsliced payload JSON exceeds the storage threshold", async () => {
+        const requests: Array<Record<string, unknown>> = [];
+        const server = new WebSocketServer({ port: 0 });
+        await new Promise<void>((resolve) => server.once("listening", resolve));
+        const address = server.address();
+        assert.ok(address && typeof address === "object");
+        process.env.PI_XAI_WS_STORE = "1";
+        process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS = "220000";
+        process.env.PI_XAI_WS_URL = `ws://127.0.0.1:${address.port}`;
+        server.on("connection", (socket) => {
+            socket.on("message", (frame) => {
+                requests.push(JSON.parse(frame.toString()) as Record<string, unknown>);
+                send(socket, {
+                    response: { id: "response-live", output: [], status: "completed" },
+                    type: "response.completed",
+                });
+            });
+        });
+
+        try {
+            const model = responsesModel();
+            const user = { role: "user" as const, content: "first", timestamp: 1 };
+            const first = await collectMessage(model, { messages: [user] });
+            first.usage.input = 190_148;
+            first.usage.cacheRead = 512;
+            first.usage.totalTokens = 190_660;
+            const bulkyDescription = "x".repeat(900_000);
+            await collectMessage(model, {
+                messages: [
+                    user,
+                    first,
+                    { role: "user", content: "ok; remind me", timestamp: 2 },
+                ],
+                tools: [{
+                    name: "bulk",
+                    description: bulkyDescription,
+                    parameters: { type: "object", properties: {} },
+                }] as Context["tools"],
+            });
+
+            assert.equal(requests.length, 2);
+            assert.equal(requests[0]?.store, true);
+            assert.equal(requests[1]?.store, true);
+            assert.equal(requests[1]?.previous_response_id, "response-live");
+            const secondTools = requests[1]?.tools;
+            assert.ok(Array.isArray(secondTools));
+            assert.ok(
+                JSON.stringify(secondTools).includes(bulkyDescription),
+                "second request should serialize the oversized tool description",
+            );
+        } finally {
+            defaultXaiWsSessionPool.closeAll();
+            await new Promise<void>((resolve) => server.close(() => resolve()));
+        }
+    });
+
     it("re-enables storage after Pi converts a compaction summary to a user message", async () => {
         const requests: Array<Record<string, unknown>> = [];
         const server = new WebSocketServer({ port: 0 });

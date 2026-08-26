@@ -94,8 +94,18 @@ describe("estimateStoredRequestTokens", () => {
         ], 0), 220_000);
     });
 
-    it("includes system, tool, and hook additions in the prepared payload estimate", () => {
+    it("uses the prepared payload when there is no reliable usage", () => {
         assert.equal(estimateStoredRequestTokens([], 220_005), 220_005);
+        assert.equal(estimateStoredRequestTokens([
+            { role: "user", content: "hi", timestamp: 1 },
+        ], 221_000), 221_000);
+    });
+
+    it("ignores a larger payload argument once reliable usage exists", () => {
+        assert.equal(estimateStoredRequestTokens([
+            assistantUsage(190_148, 10),
+            { role: "user", content: "ok; remind me", timestamp: 20 },
+        ], 221_000), 190_152);
     });
 });
 

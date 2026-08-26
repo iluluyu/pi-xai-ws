@@ -75,7 +75,7 @@ model output begins.
 | `PI_XAI_WS_IDLE_TIMEOUT_MS`                 | `300000`                                                              | Idle milliseconds before the retained socket closes. Any durable checkpoint remains available until process exit or explicit disposal.         |
 | `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`          | `0.85`                                                                | Fraction of recent thinking 5-grams that must already exist before the long-output novelty backstop stops a response.                           |
 | `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Hard maximum socket age. The default interrupts and retries an active request before xAI's 25-minute connection limit.                          |
-| `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `220000`                                                              | Safety threshold for stored mode. At or above this estimated request size, calls switch to `store: false` until compaction reduces the context. |
+| `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `220000`                                                              | Safety threshold for stored mode. At or above this estimated stored conversation size, calls switch to `store: false` until compaction reduces the context. |
 | `PI_XAI_WS_STORE`                           | unset                                                                 | Override stored-response continuation. `1` or `true` enables it; any other defined value disables it.                                          |
 | `PI_XAI_WS_DEBUG`                           | unset                                                                 | Set to `1` for lifecycle, request-shape, and recovery diagnostics. Logs exclude request data, credentials, generated text, and tool arguments. |
 
@@ -131,11 +131,12 @@ most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is
   `previous_response_id` continuation. Same-socket calls send only the
   newest items. After reconnecting, the request resumes from the latest durable
   response checkpoint and includes every locally recorded item since it. When
-  the estimated request context reaches the stored-context safety threshold, the
+  the estimated stored conversation reaches the safety threshold, the
   extension clears continuation state, warns once, and sends complete local
   history with `store: false` until compaction reduces the context. The estimate
-  combines reliable provider usage, trailing messages, and the prepared payload,
-  so a large new tool result is included before the next request. Calls without
+  is reliable provider usage plus trailing messages, so a large new tool result
+  is included before the next request. It does not use unsliced full-history
+  JSON. Calls without
   a session ID remain `store: false`. See
   [Stored-response continuation](docs/transport.md#stored-response-continuation).
 - Encrypted Responses reasoning remains in local history and can be sent with

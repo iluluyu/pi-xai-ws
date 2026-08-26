@@ -75,11 +75,12 @@ before retrying. That uses complete local history and avoids provider storage.
 Compact the thread to reduce its context before re-enabling stored mode.
 
 Newer package versions prevent the known failure path. At an estimated 220,000
-request-context tokens by default, the extension warns once, clears the stored
+stored-conversation tokens by default, the extension warns once, clears the stored
 chain, and switches to full-history `store: false` requests until compaction
-reduces the context. The estimate includes reliable provider usage, trailing
-messages, and the prepared request, so it also catches a large tool result added
-since the previous response. Configure the boundary with
+reduces the context. The estimate is the conversation xAI would store: reliable provider usage plus
+trailing messages, including a large tool result added since the previous
+response. It does not use unsliced full-history JSON, which is larger than the
+stored object during continuation. Configure the boundary with
 `maxStoredContextTokens` in the global package config or a valid
 `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. Debug logs show
 `storage disabled for oversized context` when the guard activates.

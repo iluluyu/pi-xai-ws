@@ -27,7 +27,17 @@ export function estimateStoredRequestTokens(
     messages: readonly unknown[],
     preparedPayloadTokens: number,
 ): number {
-    return Math.max(estimateContextTokens(messages), preparedPayloadTokens);
+    const conversationTokens = estimateContextTokens(messages);
+    // Unsliced create JSON includes the full local prefix, tools, and encrypted
+    // reasoning. max() with that figure trips the store guard during
+    // continuation, when xAI would store usage plus trailing items. Ignore the
+    // payload size only after a successful assistant has reported usage. With
+    // no usage yet, keep the larger of the message estimate and the payload so
+    // a first stored request still sees tools, images, and hook-only input.
+    if (hasReliableUsage(messages)) {
+        return conversationTokens;
+    }
+    return Math.max(conversationTokens, finiteNonnegative(preparedPayloadTokens));
 }
 
 export function setStoredContextSafetyActive(sessionId: string | undefined, active: boolean): void {
@@ -79,6 +89,10 @@ function estimateContextTokens(messages: readonly unknown[]): number {
         tokens += estimateMessageTokens(messages[index]);
     }
     return Math.max(tokens, latestUsageFloor(messages, compactionIndex));
+}
+
+function hasReliableUsage(messages: readonly unknown[]): boolean {
+    return findLatestReliableUsage(messages, findLatestCompactionIndex(messages)) !== undefined;
 }
 
 function findLatestCompactionIndex(messages: readonly unknown[]): number {
