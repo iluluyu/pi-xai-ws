@@ -1002,6 +1002,67 @@ describe("XaiWsSessionPool stored-response continuation", () => {
         }
     });
 
+    it("restores the durable checkpoint after the pool is disposed", async () => {
+        const firstInput = [{ role: "user", text: "first" }];
+        const firstOutput = [{ role: "assistant", text: "answer" }];
+        const secondInput = [
+            ...firstInput,
+            ...firstOutput,
+            { role: "user", text: "second" },
+        ];
+        const harness = await createHarness((socket, _payload, requestNumber) => {
+            completed(socket, `response-${requestNumber}`);
+        });
+        const firstPool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        const secondPool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        try {
+            await collect(firstPool, storedOptions(harness.url, firstInput, firstOutput));
+            firstPool.closeAll();
+            await collect(secondPool, storedOptions(harness.url, secondInput, []));
+
+            assert.equal(harness.connectionCount(), 2);
+            assert.equal(harness.requests[1]?.payload.previous_response_id, "response-1");
+            assert.deepEqual(harness.requests[1]?.payload.input, [{ role: "user", text: "second" }]);
+            assert.equal(secondPool.inspect().counters.fullRequests, 0);
+            assert.equal(secondPool.inspect().counters.continuedRequests, 1);
+        } finally {
+            firstPool.closeAll();
+            secondPool.closeAll();
+            await harness.close();
+        }
+    });
+
+    it("clears the persisted checkpoint when storage is disabled", async () => {
+        const firstInput = [{ role: "user", text: "first" }];
+        const firstOutput = [{ role: "assistant", text: "answer" }];
+        const secondInput = [
+            ...firstInput,
+            ...firstOutput,
+            { role: "user", text: "second" },
+        ];
+        const harness = await createHarness((socket, _payload, requestNumber) => {
+            completed(socket, `response-${requestNumber}`);
+        });
+        const firstPool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        const secondPool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        try {
+            await collect(firstPool, storedOptions(harness.url, firstInput, firstOutput));
+            await collect(
+                firstPool,
+                requestOptions(harness.url, secondInput, "session-a", { store: false }),
+            );
+            firstPool.closeAll();
+            await collect(secondPool, storedOptions(harness.url, secondInput, []));
+
+            assert.equal(harness.requests[2]?.payload.previous_response_id, undefined);
+            assert.deepEqual(harness.requests[2]?.payload.input, secondInput);
+        } finally {
+            firstPool.closeAll();
+            secondPool.closeAll();
+            await harness.close();
+        }
+    });
+
     it("verifies continuation against the normalized JSON wire prefix", async () => {
         const sparse = [] as unknown[];
         sparse[1] = "present";

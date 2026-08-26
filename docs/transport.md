@@ -163,8 +163,11 @@ Reference rejection has a separate bounded budget from pre-output transport
 retry. Each recovery may run once per logical request, but a reference fallback
 does not replenish an already spent transport replay. Idle cleanup closes only
 the physical socket. The retained session keeps its durable checkpoint and can
-continue from it on the replacement socket. Process restarts and explicit pool
-disposal clear both continuation positions. Debug counters expose
+continue from it on the replacement socket. The durable checkpoint is also
+written under `getAgentDir()/pi-xai-ws/continuations/<sessionId>.json` so a new
+Pi process can resume it. Pool disposal and process exit drop RAM only. Digest
+mismatch, transport-identity change, expiry after 30 days, or a missing session
+file drop the sidecar. Debug counters expose
 `continuedRequests`, `continuationFallbacks`, and `fullRequests`;
 `PI_XAI_WS_DEBUG=1` logs each request as `mode=full` or `mode=continue` with its
 input item count.
@@ -215,8 +218,9 @@ one active model call and queues at most 64 waiting calls. Requests run in order
 so frames from different calls cannot overlap on one socket. The pool does not
 evict durable checkpoints by count. Sessions that hold them remain until process
 exit or explicit pool disposal, preserving continuation across any number of
-session IDs. Each retained position contains a response ID, covered item count,
-and fixed-size SHA-256 digest rather than conversation content. Its size is
+session IDs in RAM. The same durable fields are persisted per session id so a
+later process can restore them. Each retained position contains a response ID,
+covered item count, and fixed-size SHA-256 digest rather than conversation content. Its size is
 independent of conversation length, apart from the provider-issued response ID.
 Long-lived processes that store responses for many distinct IDs therefore keep
 only small checkpoint metadata for each ID. A session with no durable checkpoint

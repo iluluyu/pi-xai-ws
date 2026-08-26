@@ -72,7 +72,7 @@ model output begins.
 | `PI_XAI_WS_URL`                 | Derived from `model.baseUrl`, otherwise `wss://api.x.ai/v1/responses` | WebSocket URL. Set this when `xai.baseUrl` does not use `api.x.ai` so proxy credentials are not sent to public xAI.                            |
 | `PI_XAI_WS_PING_INTERVAL_MS`    | `15000`                                                               | Inbound silence in milliseconds before a protocol ping.                                                                                        |
 | `PI_XAI_WS_LIVENESS_TIMEOUT_MS` | Pi's stream timeout                                                    | Additional inbound silence after the ping before the turn fails. When unset, the combined ping and liveness window follows Pi's `timeoutMs`, normally 300 seconds. |
-| `PI_XAI_WS_IDLE_TIMEOUT_MS`                 | `300000`                                                              | Idle milliseconds before the retained socket closes. Any durable checkpoint remains available until process exit or explicit disposal.         |
+| `PI_XAI_WS_IDLE_TIMEOUT_MS`                 | `300000`                                                              | Idle milliseconds before the retained socket closes. The durable checkpoint stays in RAM for the process and on disk for later Pi processes.         |
 | `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`          | `0.85`                                                                | Fraction of recent thinking 5-grams that must already exist before the long-output novelty backstop stops a response.                           |
 | `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Hard maximum socket age. The default interrupts and retries an active request before xAI's 25-minute connection limit.                          |
 | `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `220000`                                                              | Safety threshold for stored mode. At or above this estimated stored conversation size, calls switch to `store: false` until compaction reduces the context. |
@@ -129,8 +129,9 @@ most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is
 - With `storeResponses: true` in the global package config, or
   `PI_XAI_WS_STORE=1`, and a nonempty Pi session ID, calls use `store: true` and
   `previous_response_id` continuation. Same-socket calls send only the
-  newest items. After reconnecting, the request resumes from the latest durable
-  response checkpoint and includes every locally recorded item since it. When
+  newest items. After reconnecting, including a new Pi process, the request
+  resumes from the durable response checkpoint on disk and includes every
+  locally recorded item since it. When
   the estimated stored conversation reaches the safety threshold, the
   extension clears continuation state, warns once, and sends complete local
   history with `store: false` until compaction reduces the context. The estimate

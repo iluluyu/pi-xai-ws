@@ -15,6 +15,12 @@ import {
     planStoredRequest as planStoredRequestForChain,
     readStoredResponse,
 } from "./continuation.ts";
+import {
+    readDurableCheckpoint,
+    removeDurableCheckpoint,
+    sweepDurableCheckpoints,
+    writeDurableCheckpoint,
+} from "./durable-checkpoint.ts";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_INBOUND_FRAME_BYTES = 4 * 1024 * 1024;
@@ -893,10 +899,12 @@ class XaiWsSession {
                 : normalizeWireRecord(options.createPayload);
             const storeResponses = options.storeResponses === true;
             clearStoredChainOnExit = storeResponses;
+            const nextTransportKey = transportIdentity(options);
             if (!storeResponses) {
                 this.clearContinuation();
+            } else {
+                this.restoreDurableFromDisk(nextTransportKey);
             }
-            const nextTransportKey = transportIdentity(options);
             if (
                 (this.socketChain || this.durableChain) &&
                 this.continuationTransportKey !== nextTransportKey
@@ -1153,6 +1161,7 @@ class XaiWsSession {
             this.socketChain = { connection, state: next };
             if (durableAdvanced) {
                 this.durableChain = next;
+                this.persistDurable(transportKey, next);
             }
             this.continuationTransportKey = transportKey;
             debugLog(
@@ -1163,7 +1172,37 @@ class XaiWsSession {
         }
     }
 
+    private restoreDurableFromDisk(transportKey: string): void {
+        if (!this.sessionId || this.durableChain || this.socketChain) {
+            return;
+        }
+        sweepDurableCheckpoints(this.sessionId);
+        const restored = readDurableCheckpoint(this.sessionId, transportKey);
+        if (!restored) {
+            return;
+        }
+        this.durableChain = restored;
+        this.continuationTransportKey = transportKey;
+        debugLog(
+            `continuation restored from disk covered_items=${restored.coveredItemCount}`,
+        );
+    }
+
+    private persistDurable(transportKey: string, state: ContinuationState): void {
+        if (!this.sessionId) {
+            return;
+        }
+        try {
+            writeDurableCheckpoint(this.sessionId, transportKey, state);
+        } catch {
+            debugLog("continuation persist failed");
+        }
+    }
+
     private clearContinuation(): void {
+        if (this.sessionId) {
+            removeDurableCheckpoint(this.sessionId);
+        }
         this.continuationTransportKey = undefined;
         this.durableChain = undefined;
         this.lastStoredTerminalConnection = undefined;
