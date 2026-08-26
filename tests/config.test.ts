@@ -4,9 +4,11 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
     DEFAULT_LOOP_NOVELTY_THRESHOLD,
+    DEFAULT_MAX_REQUEST_IMAGE_BYTES,
     DEFAULT_MAX_STORED_CONTEXT_TOKENS,
     cacheAffinityEnabled,
     resolveLoopNoveltyThreshold,
+    resolveMaxRequestImageBytes,
     resolveMaxStoredContextTokens,
     resolveRequestLiveness,
     resolveWsUrl,
@@ -160,6 +162,41 @@ describe("resolveMaxStoredContextTokens", () => {
                 delete process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
             } else {
                 process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS = previous;
+            }
+        }
+    });
+});
+
+describe("resolveMaxRequestImageBytes", () => {
+    it("uses a safe default and accepts positive integer overrides", () => {
+        const previous = process.env.PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES;
+        try {
+            delete process.env.PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES;
+            withConfigPath((configPath) => {
+                assert.equal(
+                    resolveMaxRequestImageBytes(configPath),
+                    DEFAULT_MAX_REQUEST_IMAGE_BYTES,
+                );
+                writeFileSync(configPath, JSON.stringify({ maxRequestImageBytes: 4_000_000 }));
+                assert.equal(resolveMaxRequestImageBytes(configPath), 4_000_000);
+                process.env.PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES = "2000000";
+                assert.equal(resolveMaxRequestImageBytes(configPath), 2_000_000);
+                for (const invalid of ["", "0", "-1", "1.5", "invalid"]) {
+                    process.env.PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES = invalid;
+                    assert.equal(resolveMaxRequestImageBytes(configPath), 4_000_000);
+                }
+                delete process.env.PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES;
+                writeFileSync(configPath, JSON.stringify({ maxRequestImageBytes: 0 }));
+                assert.equal(
+                    resolveMaxRequestImageBytes(configPath),
+                    DEFAULT_MAX_REQUEST_IMAGE_BYTES,
+                );
+            });
+        } finally {
+            if (previous === undefined) {
+                delete process.env.PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES;
+            } else {
+                process.env.PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES = previous;
             }
         }
     });

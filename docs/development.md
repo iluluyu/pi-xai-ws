@@ -30,7 +30,7 @@ catalog and verifies that `grok-4.6` still resolves to `openai-responses`.
 | `src/loop-recovery.ts` | Pi event integration for abort, sanitization, compaction, and bounded recovery. |
 | `src/repetition-detector.ts` | Bounded exact, near-duplicate, and low-novelty checks. |
 | `src/stored-context.ts` | Context-usage inspection and the one-shot stored-limit warning. |
-| `src/history.ts` | Responses and legacy thinking-signature handling. |
+| `src/history.ts` | Responses and legacy thinking-signature handling, plus the newest-first image-byte budget. |
 | `src/config.ts` | Global `getAgentDir()/pi-xai-ws.json` loading, WebSocket URL safety, and environment settings. |
 | `src/liveness.ts` | Ping-on-silence state machine. |
 | `src/ws-events.ts` | WebSocket protocol, session pool, serialization, replay, bounds, and lifecycle. |

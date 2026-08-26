@@ -57,7 +57,13 @@ chain to reconcile in this default mode.
 
 `src/history.ts` distinguishes Responses thinking signatures from legacy
 Completions signatures. It retains JSON-shaped Responses signatures and removes
-field-name signatures such as `reasoning_content` before conversion.
+field-name signatures such as `reasoning_content` before conversion. It also
+applies a newest-first image-byte budget before the payload is built. Older
+screenshot blocks become short text placeholders once the request exceeds 8MB
+of image data by default. Configure that with `maxRequestImageBytes` or
+`PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`. The newest screenshot is kept even when it
+alone exceeds the budget. This is a wire-size guard; Pi's session file still
+stores the original images.
 
 Pi's Responses stream processor projects output events back into its durable
 assistant message format. This includes reasoning, messages, function calls,

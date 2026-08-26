@@ -85,6 +85,18 @@ stored object during continuation. Configure the boundary with
 `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. Debug logs show
 `storage disabled for oversized context` when the guard activates.
 
+## WebSocket closed (1006) after screenshots
+
+A long thread with many Simulator or device screenshots can make a
+`store: false` full-history request large enough that xAI closes the WebSocket
+with code 1006 and no error text. Pi then retries the same payload until the
+turn fails.
+
+Version 0.10.0 and later keep the newest screenshots and replace older image
+bytes with placeholders once the request exceeds 8MB of image data. Configure
+the budget with `maxRequestImageBytes` or `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`.
+Debug logs show `omitted N earlier screenshot(s)` when the guard activates.
+
 ## Authentication failures
 
 The extension reuses the xAI credential Pi passes to provider streams. For the

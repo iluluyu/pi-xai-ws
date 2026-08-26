@@ -5,6 +5,7 @@ import { DEFAULT_LIVENESS_TIMEOUT_MS, DEFAULT_PING_INTERVAL_MS } from "./livenes
 
 export const DEFAULT_WS_URL = "wss://api.x.ai/v1/responses";
 export const DEFAULT_LOOP_NOVELTY_THRESHOLD = 0.85;
+export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_MAX_STORED_CONTEXT_TOKENS = 220_000;
 export const DEFAULT_WS_IDLE_TIMEOUT_MS = 5 * 60_000;
 export const DEFAULT_WS_MAX_AGE_MS = 24 * 60_000;
@@ -66,6 +67,15 @@ export function resolveMaxStoredContextTokens(configPath?: string): number {
     }
     const configured = readGlobalConfig(configPath)?.maxStoredContextTokens;
     return positiveInteger(configured) ?? DEFAULT_MAX_STORED_CONTEXT_TOKENS;
+}
+
+export function resolveMaxRequestImageBytes(configPath?: string): number {
+    const envValue = positiveInteger(process.env.PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES);
+    if (envValue !== undefined) {
+        return envValue;
+    }
+    const configured = readGlobalConfig(configPath)?.maxRequestImageBytes;
+    return positiveInteger(configured) ?? DEFAULT_MAX_REQUEST_IMAGE_BYTES;
 }
 
 function readGlobalConfig(configPath?: string): Record<string, unknown> | undefined {

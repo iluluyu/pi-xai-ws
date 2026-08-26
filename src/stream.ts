@@ -6,13 +6,14 @@ import {
     type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import {
+    resolveMaxRequestImageBytes,
     resolveMaxStoredContextTokens,
     resolveRequestLiveness,
     resolveWsUrl,
     storeResponsesEnabled,
 } from "./config.ts";
 import { normalizeXaiErrorMessage } from "./errors.ts";
-import { sanitizeContextMessages } from "./history.ts";
+import { limitContextImageBytes, sanitizeContextMessages } from "./history.ts";
 import { processResponsesStreamFn } from "./pi-ai-api.ts";
 import {
     buildResponseCreate,
@@ -59,7 +60,10 @@ export function streamXaiResponsesWs(
 
         try {
             const apiKey = resolveApiKey(options);
-            const providerContext = sanitizeContextMessages(context);
+            const providerContext = limitContextImageBytes(
+                sanitizeContextMessages(context),
+                resolveMaxRequestImageBytes(),
+            );
             const preparedOptions = prepareResponseOptions(model, providerContext, options, apiKey);
             const storageConfigured = storeResponsesEnabled() &&
                 Boolean(preparedOptions.sessionId?.trim());
