@@ -43,20 +43,23 @@ extension loader.
 
 ## Pi compatibility imports
 
-Pi 0.84 aliases `@earendil-works/pi-ai` to `dist/compat.js` while loading
-extensions. A direct runtime import such as:
+Pi 0.84 aliases `@earendil-works/pi-ai` and `@earendil-works/pi-ai/compat`
+while loading extensions. A direct runtime import such as:
 
 ```ts
 import { processResponsesStream } from "@earendil-works/pi-ai/api/openai-responses-shared";
 ```
 
-can therefore resolve under `dist/compat.js/api` and abort every Pi session at
-startup.
+is not aliased, and those exports have no `require` condition, so Pi's CJS
+extension loader aborts at startup.
 
-Load sibling `dist/api` files through `src/pi-ai-api.ts`. That module resolves
-the exact `@earendil-works/pi-ai/compat` export, locates its sibling API files,
-and loads them by filesystem path. Type-only imports from Pi's API subpaths are
-safe because TypeScript removes them.
+Load those helpers as files through `src/pi-ai-api.ts`. Pi's CJS extension
+loader cannot `require` `@earendil-works/pi-ai/api/*` because those exports have
+no `require` condition, and they are not on the aliased `/compat` module. The
+loader realpaths `process.argv[1]` and loads `dist/api/<name>.js` from the host
+CLI's node_modules, so a packed install without peer packages still sees Pi's
+own tree when `pi` is a `bin/` symlink. Type-only imports from Pi's API
+subpaths are safe because TypeScript removes them.
 
 Keep both Pi packages in `peerDependencies`. Pi supplies them to the extension
 at runtime, while the exact versions in `devDependencies` make local tests

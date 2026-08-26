@@ -252,5 +252,6 @@ installation even though Pi supplies them at load time.
 A real startup failure usually includes an extension import error. Confirm that
 the package contains `src/pi-ai-api.ts` and that the installed Pi version is
 0.84 or newer. Direct `@earendil-works/pi-ai/api/...` runtime imports do not work
-under Pi 0.84's extension aliasing; the package must use its compatibility
-loader.
+from Pi's CJS extension loader: those exports have no `require` condition, and
+they are not on the aliased `/compat` module. The package loads `dist/api` files
+from the host CLI's node_modules instead.

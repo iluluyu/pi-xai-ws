@@ -46,17 +46,20 @@ It should not contain tests, temporary probes, credentials, or Pi session data.
 ## 3. Test the packed package
 
 A source-checkout test can hide missing package metadata or undeclared runtime
-imports. Pack the exact release candidate and install it in an empty directory.
+imports. Pack the exact release candidate and install it in an empty directory
+**outside this repository**. A smoke tree under `tmp/` still walks up into the
+checkout's `node_modules`, where `pi-ai` is a devDependency, so it never proves
+the host-tree fallback.
+
 Install with peer dependency installation disabled so the smoke test proves Pi
 can supply its own peer packages:
 
 ```sh
-rm -rf tmp/package-smoke
-mkdir -p tmp/package-smoke/install
-npm pack --pack-destination tmp/package-smoke
-printf '{"private":true}\n' > tmp/package-smoke/install/package.json
-cd tmp/package-smoke/install
-npm install --legacy-peer-deps --ignore-scripts ../mwolson-org-pi-xai-ws-*.tgz
+SMOKE=$(mktemp -d "${TMPDIR:-/tmp}/pi-xai-ws-smoke.XXXXXX")
+npm pack --pack-destination "$SMOKE"
+printf '{"private":true}\n' > "$SMOKE/package.json"
+cd "$SMOKE"
+npm install --legacy-peer-deps --ignore-scripts ./mwolson-org-pi-xai-ws-*.tgz
 ```
 
 Load the installed `src/index.ts` through Pi's real extension loader, not a
@@ -72,7 +75,7 @@ The command must return a successful `get_state` response without an extension
 load error. This catches missing peer declarations, missing tarball files, and
 Pi compatibility-import failures.
 
-Return to the repository root after the smoke test.
+Return to the repository root after the smoke test and delete `$SMOKE`.
 
 ## 4. Run a live two-turn probe
 
