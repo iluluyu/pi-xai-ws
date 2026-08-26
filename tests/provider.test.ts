@@ -5,7 +5,7 @@ import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
 import { registerXaiProvider, type XaiStreamSimple, XAI_RESPONSES_API } from "../src/provider.ts";
 
 describe("xAI provider registration", () => {
-    it("matches the Responses API in Pi 0.84.2's static xAI catalog", () => {
+    it("matches the Responses API in Pi 0.84.3's static xAI catalog", () => {
         const responsesModel = xaiProvider().getModels().find(
             (model) => model.api === XAI_RESPONSES_API,
         );
