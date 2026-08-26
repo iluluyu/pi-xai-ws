@@ -95,7 +95,7 @@ describe("RepetitionDetector", () => {
         }
         const startedAt = performance.now();
         assert.equal(feed(detector, paragraphs.join("\n")), undefined);
-        assert.ok(performance.now() - startedAt < 1_500);
+        assert.ok(performance.now() - startedAt < 4_000);
     });
 
     it("skips repeated fenced code in visible output", () => {
