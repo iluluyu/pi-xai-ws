@@ -127,7 +127,9 @@ only when storage is configured and mark that payload for the pool so custom
 `toJSON` behavior still runs once. The default storage-off path skips the safety
 estimate. At the threshold, force `store: false`, remove continuation state, and
 send full local history. Record the exact stream decision for the extension
-warning. Never retry `Response is too large to store` after output begins.
+warning. Never retry `Response is too large to store` after output begins. Keep the
+streamed output, latch `store: false` until a later compaction, and retry that
+request with `store: false` only when the rejection arrived before output.
 
 ## WebSocket changes
 

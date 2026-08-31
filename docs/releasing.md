@@ -111,7 +111,17 @@ When validating the opt-in stored-response mode, set `storeResponses: true` in
 multi-turn probe with a nonempty Pi session ID and `PI_XAI_WS_DEBUG=1`. Require
 one `mode=full` first request and same-socket `mode=continue` follow-ups
 containing only new input items. This verifies the package-owned config path,
-not just the environment override.
+not just the environment override. The default storage threshold is 400,000
+tokens, so a normal two-turn probe should stay in stored continuation.
+
+A refreshed SuperGrok `Authorization` token should reconnect the socket and keep
+the durable checkpoint. That path is covered by the session-pool regression;
+do not require a live OAuth refresh for a minor release. Changing the WebSocket
+URL or `x-grok-conv-id` must still reset continuation.
+
+Screenshot omission stickiness is covered by the history regression. A live
+multi-screenshot session is optional and is not a release blocker when those
+tests pass.
 
 Also rotate the socket after two successful tool-call responses that share one
 xAI response ID. Verify that the replacement-socket request uses the durable

@@ -7,7 +7,6 @@ import {
     EMPTY_THINKING_NUDGE_NOTIFY,
     EMPTY_THINKING_NUDGE_TEXT,
     isEmptyThinkingStop,
-    isGrokModel,
     isNoToolStop,
     registerEmptyThinkingNudge,
     shouldNudgeEmptyThinking,
@@ -20,19 +19,6 @@ afterEach(() => {
     restoreEnv("PI_XAI_WS_TEST_NUDGE", previousTestNudge);
 });
 
-describe("isGrokModel", () => {
-    it("accepts xAI Grok ids", () => {
-        assert.equal(isGrokModel({ id: "grok-4.6", provider: "xai" }), true);
-        assert.equal(isGrokModel({ id: "xai/grok-4.6", provider: "xai" }), true);
-    });
-
-    it("rejects other providers and xAI non-Grok ids", () => {
-        assert.equal(isGrokModel({ id: "grok-4.6", provider: "openai" }), false);
-        assert.equal(isGrokModel({ id: "grok-3", provider: "openrouter" }), false);
-        assert.equal(isGrokModel({ id: "some-other-model", provider: "xai" }), false);
-        assert.equal(isGrokModel(undefined), false);
-    });
-});
 
 describe("isEmptyThinkingStop", () => {
     it("matches a completed thinking-only stop", () => {

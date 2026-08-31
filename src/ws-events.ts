@@ -11,6 +11,7 @@ import {
     type ContinuationState,
     type ContinuationRequestContext,
     isContinuationRejection,
+    isStoredResponseTooLarge,
     nextContinuationState,
     planStoredRequest as planStoredRequestForChain,
     readStoredResponse,
@@ -21,6 +22,7 @@ import {
     sweepDurableCheckpoints,
     writeDurableCheckpoint,
 } from "./durable-checkpoint.ts";
+import { markStoredResponseTooLarge } from "./stored-context.ts";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_INBOUND_FRAME_BYTES = 4 * 1024 * 1024;
@@ -296,9 +298,20 @@ function fullContextPayload(
     return payload;
 }
 
-function canonicalHeaders(headers: Record<string, string>): Array<[string, string]> {
+const CREDENTIAL_HEADER_NAMES = new Set([
+    "api-key",
+    "authorization",
+    "cookie",
+    "x-api-key",
+]);
+
+function canonicalHeaders(
+    headers: Record<string, string>,
+    omitCredentials = false,
+): Array<[string, string]> {
     return Object.entries(headers)
         .map(([name, value]) => [name.toLowerCase(), value] as [string, string])
+        .filter(([name]) => !omitCredentials || !CREDENTIAL_HEADER_NAMES.has(name))
         .sort(([leftName, leftValue], [rightName, rightValue]) => {
             if (leftName !== rightName) {
                 return leftName.localeCompare(rightName);
@@ -307,14 +320,21 @@ function canonicalHeaders(headers: Record<string, string>): Array<[string, strin
         });
 }
 
-function transportIdentity(options: XaiWsSessionEventsOptions): string {
+function transportIdentity(
+    options: XaiWsSessionEventsOptions,
+    omitCredentials = false,
+): string {
     return JSON.stringify({
         connectTimeoutMs: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
-        headers: canonicalHeaders(options.headers),
+        headers: canonicalHeaders(options.headers, omitCredentials),
         livenessTimeoutMs: options.livenessTimeoutMs ?? resolveLivenessTimeoutMs(),
         pingIntervalMs: options.pingIntervalMs ?? resolvePingIntervalMs(),
         url: options.url,
     });
+}
+
+function continuationTransportIdentity(options: XaiWsSessionEventsOptions): string {
+    return transportIdentity(options, true);
 }
 
 function isModelOutputEvent(event: Record<string, unknown>): boolean {
@@ -899,26 +919,28 @@ class XaiWsSession {
                 : normalizeWireRecord(options.createPayload);
             const storeResponses = options.storeResponses === true;
             clearStoredChainOnExit = storeResponses;
-            const nextTransportKey = transportIdentity(options);
+            const nextSocketKey = transportIdentity(options);
+            const nextContinuationKey = continuationTransportIdentity(options);
             if (!storeResponses) {
                 this.clearContinuation();
             } else {
-                this.restoreDurableFromDisk(nextTransportKey);
+                this.restoreDurableFromDisk(nextContinuationKey);
             }
             if (
                 (this.socketChain || this.durableChain) &&
-                this.continuationTransportKey !== nextTransportKey
+                this.continuationTransportKey !== nextContinuationKey
             ) {
                 this.clearContinuation();
                 this.counters.continuationFallbacks += 1;
                 debugLog("continuation reset after transport identity change");
             }
-            if (this.transportKey !== undefined && this.transportKey !== nextTransportKey) {
+            if (this.transportKey !== undefined && this.transportKey !== nextSocketKey) {
                 this.closeConnection("transport changed");
             }
 
             let continuationFallbackUsed = false;
             let forceFullContext = false;
+            let forceStoreFalse = false;
             let responseReported = false;
             let transportReplayed = false;
             const onOpen: OpenXaiEventsOptions["onOpen"] = async (response) => {
@@ -931,11 +953,11 @@ class XaiWsSession {
 
             while (true) {
                 this.throwIfDisposed();
-                const connection = this.ensureConnection(options, nextTransportKey);
-                const continuation = forceFullContext
+                const connection = this.ensureConnection(options, nextSocketKey);
+                const continuation = forceFullContext || forceStoreFalse
                     ? undefined
                     : this.continuationForConnection(connection);
-                const payload = storeResponses
+                const payload = storeResponses && !forceStoreFalse
                     ? this.planStoredRequest(wirePayload, continuation)
                     : fullContextPayload(wirePayload, true);
                 const inputItems = Array.isArray(payload.input) ? payload.input.length : 0;
@@ -949,6 +971,8 @@ class XaiWsSession {
                 let outputStarted = false;
                 let retryConnectionLimit = false;
                 let retryContinuationFallback = false;
+                let retryStoreFalse = false;
+                let yieldedTerminal = false;
                 try {
                     for await (const event of connection.request({
                         ...options,
@@ -980,7 +1004,34 @@ class XaiWsSession {
                             retryContinuationFallback = true;
                             break;
                         }
-                        const stored = storeResponses ? readStoredResponse(event) : undefined;
+                        if (
+                            storeResponses &&
+                            !forceStoreFalse &&
+                            isStoredResponseTooLarge(event)
+                        ) {
+                            markStoredResponseTooLarge(this.sessionId);
+                            this.clearContinuation();
+                            this.counters.continuationFallbacks += 1;
+                            debugLog("stored response too large");
+                            if (!outputStarted) {
+                                retryStoreFalse = true;
+                                break;
+                            }
+                            if (!yieldedTerminal) {
+                                yield {
+                                    response: { status: "completed" },
+                                    type: "response.completed",
+                                };
+                            }
+                            continue;
+                        }
+                        const eventType = typeof event.type === "string" ? event.type : "";
+                        if (isTerminalEventType(eventType) && eventType !== "error") {
+                            yieldedTerminal = true;
+                        }
+                        const stored = storeResponses && !forceStoreFalse
+                            ? readStoredResponse(event)
+                            : undefined;
                         try {
                             yield event;
                         } finally {
@@ -989,7 +1040,7 @@ class XaiWsSession {
                                     connection,
                                     stored,
                                     options.projectStoredOutput,
-                                    nextTransportKey,
+                                    nextContinuationKey,
                                 );
                                 clearStoredChainOnExit = false;
                             }
@@ -1025,12 +1076,21 @@ class XaiWsSession {
                     throw error;
                 }
 
-                if (retryConnectionLimit || retryContinuationFallback) {
+                if (retryConnectionLimit || retryContinuationFallback || retryStoreFalse) {
                     this.throwIfDisposed();
-                    this.closeConnection(retryContinuationFallback ? "continuation rejected" : "connection limit");
-                    if (retryContinuationFallback) {
+                    let closeReason = "connection limit";
+                    if (retryStoreFalse) {
+                        closeReason = "stored response too large";
+                    } else if (retryContinuationFallback) {
+                        closeReason = "continuation rejected";
+                    }
+                    this.closeConnection(closeReason);
+                    if (retryContinuationFallback || retryStoreFalse) {
                         this.clearContinuation();
                         forceFullContext = true;
+                    }
+                    if (retryStoreFalse) {
+                        forceStoreFalse = true;
                     }
                     continue;
                 }

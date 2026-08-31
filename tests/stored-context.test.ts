@@ -4,6 +4,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { sanitizeContextMessages } from "../src/history.ts";
 import {
     estimateStoredRequestTokens,
+    hasStoredResponseTooLarge,
+    markStoredResponseTooLarge,
     registerStoredContextSafety,
     setStoredContextSafetyActive,
 } from "../src/stored-context.ts";
@@ -150,6 +152,21 @@ describe("stored-response safety warning", () => {
         handlers.get("turn_end")?.({}, ctx);
 
         assert.equal(notifications.length, 2);
+    });
+
+    it("blocks storage after a too-large rejection until a later compaction", () => {
+        markStoredResponseTooLarge("reject-session");
+        assert.equal(
+            hasStoredResponseTooLarge("reject-session", [assistantUsage(10, Date.now())]),
+            true,
+        );
+        assert.equal(
+            hasStoredResponseTooLarge("reject-session", [
+                { role: "compactionSummary", summary: "later work", timestamp: Date.now() + 5_000 },
+                assistantUsage(10, Date.now() + 6_000),
+            ]),
+            false,
+        );
     });
 
     it("does not warn when stored responses are disabled", () => {

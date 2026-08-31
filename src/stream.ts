@@ -12,6 +12,7 @@ import {
     resolveWsUrl,
     storeResponsesEnabled,
 } from "./config.ts";
+import { isStoredResponseTooLargeMessage } from "./continuation.ts";
 import { normalizeXaiErrorMessage } from "./errors.ts";
 import { limitContextImageBytes, sanitizeContextMessages } from "./history.ts";
 import { processResponsesStreamFn } from "./pi-ai-api.ts";
@@ -24,6 +25,8 @@ import {
 } from "./payload.ts";
 import {
     estimateStoredRequestTokens,
+    hasStoredResponseTooLarge,
+    markStoredResponseTooLarge,
     setStoredContextSafetyActive,
 } from "./stored-context.ts";
 import {
@@ -60,9 +63,11 @@ export function streamXaiResponsesWs(
 
         try {
             const apiKey = resolveApiKey(options);
+            const sessionId = typeof options?.sessionId === "string" ? options.sessionId.trim() : "";
             const providerContext = limitContextImageBytes(
                 sanitizeContextMessages(context),
                 resolveMaxRequestImageBytes(),
+                sessionId || undefined,
             );
             const preparedOptions = prepareResponseOptions(model, providerContext, options, apiKey);
             const storageConfigured = storeResponsesEnabled() &&
@@ -84,10 +89,14 @@ export function streamXaiResponsesWs(
                     normalized.tokenEstimate,
                 );
                 const maxStoredContextTokens = resolveMaxStoredContextTokens();
-                storeResponses = contextTokens < maxStoredContextTokens;
+                const rejectedStore = hasStoredResponseTooLarge(
+                    preparedOptions.sessionId,
+                    providerContext.messages,
+                );
+                storeResponses = contextTokens < maxStoredContextTokens && !rejectedStore;
                 if (!storeResponses && process.env.PI_XAI_WS_DEBUG === "1") {
                     process.stderr.write(
-                        `[pi-xai-ws] storage disabled for oversized context context_tokens=${contextTokens} threshold=${maxStoredContextTokens}\n`,
+                        `[pi-xai-ws] storage disabled for oversized context context_tokens=${contextTokens} threshold=${maxStoredContextTokens} rejected=${rejectedStore}\n`,
                     );
                 }
             }
@@ -163,8 +172,28 @@ export function streamXaiResponsesWs(
             }
             const aborted = options?.signal?.aborted === true ||
                 (error instanceof Error && (error.name === "AbortError" || error.message === "Request was aborted"));
-            output.stopReason = aborted ? "aborted" : "error";
             const errorMessage = error instanceof Error ? error.message : String(error);
+            if (
+                !aborted &&
+                output.content.length > 0 &&
+                isStoredResponseTooLargeMessage(errorMessage)
+            ) {
+                markStoredResponseTooLarge(
+                    typeof options?.sessionId === "string" ? options.sessionId : undefined,
+                );
+                output.stopReason = output.content.some((block) => block.type === "toolCall")
+                    ? "toolUse"
+                    : "stop";
+                output.errorMessage = undefined;
+                stream.push({
+                    type: "done",
+                    reason: output.stopReason,
+                    message: output,
+                });
+                stream.end();
+                return;
+            }
+            output.stopReason = aborted ? "aborted" : "error";
             output.errorMessage = normalizeXaiErrorMessage(
                 errorMessage,
                 isReplayableTransportError(error),

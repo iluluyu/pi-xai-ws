@@ -226,3 +226,33 @@ export function isContinuationRejection(event: Record<string, unknown>): boolean
         (message.includes("previous response") && message.includes("not found")) ||
         (message.includes("response with id=") && message.includes("not found"));
 }
+
+export function isStoredResponseTooLargeMessage(message: string): boolean {
+    return message.toLowerCase().includes("too large to store");
+}
+
+/**
+ * xAI can reject `store: true` after the model has already streamed output.
+ * Retrying that request would duplicate work, so the session keeps the output
+ * and disables storage until compaction.
+ */
+export function isStoredResponseTooLarge(event: Record<string, unknown>): boolean {
+    if (event.type === "error" || event.type === "api_error") {
+        return isStoredResponseTooLargeMessage(eventMessage(event));
+    }
+    if (event.type !== "response.failed") {
+        return false;
+    }
+    const response = isPlainRecord(event.response) ? event.response : undefined;
+    const nestedError = isPlainRecord(response?.error) ? response.error : undefined;
+    const nestedMessage = typeof nestedError?.message === "string" ? nestedError.message : "";
+    return isStoredResponseTooLargeMessage(nestedMessage);
+}
+
+function eventMessage(event: Record<string, unknown>): string {
+    if (typeof event.message === "string") {
+        return event.message;
+    }
+    const nestedError = isPlainRecord(event.error) ? event.error : undefined;
+    return typeof nestedError?.message === "string" ? nestedError.message : "";
+}

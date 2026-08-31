@@ -1566,7 +1566,7 @@ describe("XaiWsSessionPool stored-response continuation", () => {
         }
     });
 
-    it("clears the chain when the transport identity changes", async () => {
+    it("reconnects on a credential change without dropping the durable checkpoint", async () => {
         const firstInput = [{ role: "user", text: "first" }];
         const firstOutput = [{ role: "assistant", text: "answer" }];
         const secondInput = [...firstInput, ...firstOutput, { role: "user", text: "second" }];
@@ -1577,13 +1577,88 @@ describe("XaiWsSessionPool stored-response continuation", () => {
         try {
             await collect(pool, storedOptions(harness.url, firstInput, firstOutput));
             const changed = storedOptions(harness.url, secondInput, []);
-            changed.headers = { ...changed.headers, Authorization: "Bearer another-account" };
+            changed.headers = { ...changed.headers, Authorization: "Bearer refreshed-token" };
+            await collect(pool, changed);
+
+            assert.equal(harness.connectionCount(), 2);
+            assert.equal(harness.requests[1]?.payload.previous_response_id, "response-1");
+            assert.deepEqual(harness.requests[1]?.payload.input, [{ role: "user", text: "second" }]);
+            assert.equal(pool.inspect().counters.continuationFallbacks, 0);
+        } finally {
+            pool.closeAll();
+            await harness.close();
+        }
+    });
+
+    it("clears the chain when a non-credential transport setting changes", async () => {
+        const firstInput = [{ role: "user", text: "first" }];
+        const firstOutput = [{ role: "assistant", text: "answer" }];
+        const secondInput = [...firstInput, ...firstOutput, { role: "user", text: "second" }];
+        const harness = await createHarness((socket, _payload, requestNumber) => {
+            completed(socket, `response-${requestNumber}`);
+        });
+        const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        try {
+            await collect(pool, storedOptions(harness.url, firstInput, firstOutput));
+            const changed = storedOptions(harness.url, secondInput, []);
+            changed.headers = { ...changed.headers, "x-grok-conv-id": "session-b" };
             await collect(pool, changed);
 
             assert.equal(harness.connectionCount(), 2);
             assert.equal(harness.requests[1]?.payload.previous_response_id, undefined);
             assert.deepEqual(harness.requests[1]?.payload.input, secondInput);
             assert.equal(pool.inspect().counters.continuationFallbacks, 1);
+        } finally {
+            pool.closeAll();
+            await harness.close();
+        }
+    });
+
+    it("retries with store false when xAI rejects storage before output", async () => {
+        const input = [{ role: "user", text: "first" }];
+        const harness = await createHarness((socket, payload) => {
+            if (payload.store !== false) {
+                socket.send(JSON.stringify({
+                    message: "Response is too large to store. You can avoid this error by setting `store` to false in your request.",
+                    type: "error",
+                }));
+                return;
+            }
+            completed(socket, "response-full");
+        });
+        const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        try {
+            const events = await collect(pool, storedOptions(harness.url, input, []));
+            assert.equal(harness.requests.length, 2);
+            assert.equal(harness.requests[0]?.payload.store, true);
+            assert.equal(harness.requests[1]?.payload.store, false);
+            assert.equal(harness.requests[1]?.payload.previous_response_id, undefined);
+            assert.equal(events.at(-1)?.type, "response.completed");
+        } finally {
+            pool.closeAll();
+            await harness.close();
+        }
+    });
+
+    it("keeps streamed output when storage is rejected after output starts", async () => {
+        const input = [{ role: "user", text: "first" }];
+        const harness = await createHarness((socket) => {
+            socket.send(JSON.stringify({
+                item: { type: "message" },
+                output_index: 0,
+                type: "response.output_item.added",
+            }));
+            socket.send(JSON.stringify({
+                message: "Response is too large to store",
+                type: "error",
+            }));
+        });
+        const pool = new XaiWsSessionPool({ idleTimeoutMs: 10_000, maxSocketAgeMs: 10_000 });
+        try {
+            const events = await collect(pool, storedOptions(harness.url, input, []));
+            assert.equal(harness.requests.length, 1);
+            assert.equal(events.some((event) => event.type === "error"), false);
+            assert.equal(events.at(-1)?.type, "response.completed");
         } finally {
             pool.closeAll();
             await harness.close();

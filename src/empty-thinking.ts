@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isXaiChatModel, type ModelLike } from "./models.ts";
 
 export const EMPTY_THINKING_NUDGE_CUSTOM_TYPE = "pi-xai-ws-empty-thinking";
 export const EMPTY_THINKING_TEST_NUDGE_FILENAME = "pi-xai-ws.test-nudge";
@@ -16,10 +17,7 @@ export type AssistantLike = {
     stopReason?: unknown;
 };
 
-export type ModelLike = {
-    id?: unknown;
-    provider?: unknown;
-};
+export type { ModelLike };
 
 export type EmptyThinkingNudgeState = {
     alreadyNudged: boolean;
@@ -38,13 +36,6 @@ type SessionState = EmptyThinkingNudgeState;
 
 export function createEmptyThinkingNudgeState(): EmptyThinkingNudgeState {
     return { alreadyNudged: false, priorAssistantCount: 0 };
-}
-
-export function isGrokModel(model?: ModelLike): boolean {
-    if (model?.provider !== "xai" || typeof model.id !== "string") {
-        return false;
-    }
-    return model.id.startsWith("grok") || model.id.includes("/grok");
 }
 
 export function isEmptyThinkingStop(message: AssistantLike): boolean {
@@ -77,7 +68,7 @@ export function isNoToolStop(message: AssistantLike): boolean {
 }
 
 export function shouldNudgeEmptyThinking(input: EmptyThinkingNudgeInput): boolean {
-    if (input.alreadyNudged || !isGrokModel(input.model) || input.priorAssistantCount < 1) {
+    if (input.alreadyNudged || !isXaiChatModel(input.model) || input.priorAssistantCount < 1) {
         return false;
     }
     if (input.forceMidLoopStop) {

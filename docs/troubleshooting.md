@@ -74,10 +74,11 @@ Version 0.5.1 and earlier can surface this as a failed Pi turn. Set
 before retrying. That uses complete local history and avoids provider storage.
 Compact the thread to reduce its context before re-enabling stored mode.
 
-Newer package versions prevent the known failure path. At an estimated 220,000
+Newer package versions prevent the known failure path. At an estimated 400,000
 stored-conversation tokens by default, the extension warns once, clears the stored
 chain, and switches to full-history `store: false` requests until compaction
-reduces the context. The estimate is the conversation xAI would store: reliable provider usage plus
+reduces the context. If xAI still rejects a stored response as too large after
+output, the turn keeps the streamed output and storage stays off until compaction. The estimate is the conversation xAI would store: reliable provider usage plus
 trailing messages, including a large tool result added since the previous
 response. It does not use unsliced full-history JSON, which is larger than the
 stored object during continuation. Configure the boundary with
@@ -93,9 +94,11 @@ with code 1006 and no error text. Pi then retries the same payload until the
 turn fails.
 
 Version 0.10.0 and later keep the newest screenshots and replace older image
-bytes with placeholders once the request exceeds 8MB of image data. Configure
-the budget with `maxRequestImageBytes` or `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`.
-Debug logs show `omitted N earlier screenshot(s)` when the guard activates.
+bytes with placeholders once the request exceeds 8MB of image data. Once a
+screenshot is omitted in a session, later calls keep it omitted so a new shot
+does not resurrect an older image in the wire prefix. Configure the budget with
+`maxRequestImageBytes` or `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`. Debug logs show
+`omitted N earlier screenshot(s)` when the guard activates.
 
 ## Authentication failures
 
@@ -155,8 +158,10 @@ letting xAI terminate the generation one minute later.
 Frequent unexpected rotations usually mean one of these values changes between
 calls:
 
-- Authorization or another upgrade header
+- Authorization or another upgrade header. A refreshed SuperGrok token reconnects
+  the socket but keeps the durable continuation checkpoint.
 - WebSocket URL
+- Conversation id (`x-grok-conv-id`)
 - Connection timeout
 - Ping interval
 - Liveness timeout

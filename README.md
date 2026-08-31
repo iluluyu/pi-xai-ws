@@ -75,8 +75,8 @@ model output begins.
 | `PI_XAI_WS_IDLE_TIMEOUT_MS`                 | `300000`                                                              | Idle milliseconds before the retained socket closes. The durable checkpoint stays in RAM for the process and on disk for later Pi processes.         |
 | `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`          | `0.85`                                                                | Fraction of recent thinking 5-grams that must already exist before the long-output novelty backstop stops a response.                           |
 | `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Hard maximum socket age. The default interrupts and retries an active request before xAI's 25-minute connection limit.                          |
-| `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `220000`                                                              | Safety threshold for stored mode. At or above this estimated stored conversation size, calls switch to `store: false` until compaction reduces the context. |
-| `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`         | `8388608`                                                             | Newest-first budget for image bytes on the wire. Older screenshots become short placeholders so full-history requests stay under xAI's WebSocket size limit. |
+| `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `400000`                                                              | Safety threshold for stored mode. At or above this estimated stored conversation size, calls switch to `store: false` until compaction reduces the context. |
+| `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`         | `8388608`                                                             | Newest-first budget for image bytes on the wire. Older screenshots become short placeholders so full-history requests stay under xAI's WebSocket size limit. Once omitted in a session, a screenshot stays omitted. |
 | `PI_XAI_WS_STORE`                           | unset                                                                 | Override stored-response continuation. `1` or `true` enables it; any other defined value disables it.                                          |
 | `PI_XAI_WS_DEBUG`                           | unset                                                                 | Set to `1` for lifecycle, request-shape, and recovery diagnostics. Logs exclude request data, credentials, generated text, and tool arguments. |
 
@@ -112,11 +112,12 @@ supported because a repository must not opt users into server-side retention.
 A missing, malformed, unreadable, or non-boolean config remains safely off.
 
 Stored mode also accepts an optional positive integer
-`maxStoredContextTokens`. It defaults to 220,000 and can be overridden by a
+`maxStoredContextTokens`. It defaults to 400,000 and can be overridden by a
 valid `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. Invalid environment values fall
-back to the global config and then the default. This is a safety boundary below
-the provider limit observed on long agentic responses, not a model
-context-window setting.
+back to the global config and then the default. This is a safety boundary for
+provider storage, not a model context-window setting. If xAI rejects a stored
+response as too large, the extension keeps any streamed output, disables storage
+until compaction, and does not retry that request.
 
 The same global file may set `loopNoveltyThreshold` to a ratio above zero and at
 most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is

@@ -4,6 +4,8 @@ import {
     type ContinuationState,
     continuationInputDigest,
     isContinuationRejection,
+    isStoredResponseTooLarge,
+    isStoredResponseTooLargeMessage,
     nextContinuationState,
     planStoredRequest,
     readStoredResponse,
@@ -259,5 +261,35 @@ describe("isContinuationRejection", () => {
             type: "error",
         }), false);
         assert.equal(isContinuationRejection({ message: "not found", type: "response.failed" }), false);
+    });
+});
+
+describe("isStoredResponseTooLarge", () => {
+    it("matches the documented store-size error", () => {
+        assert.equal(
+            isStoredResponseTooLargeMessage(
+                "Response is too large to store. You can avoid this error by setting `store` to false in your request.",
+            ),
+            true,
+        );
+        assert.equal(isStoredResponseTooLarge({
+            message: "Response is too large to store",
+            type: "error",
+        }), true);
+        assert.equal(isStoredResponseTooLarge({
+            response: { error: { message: "Response is too large to store" } },
+            type: "response.failed",
+        }), true);
+    });
+
+    it("ignores unrelated failures", () => {
+        assert.equal(isStoredResponseTooLarge({
+            message: "Response with id=abc not found",
+            type: "error",
+        }), false);
+        assert.equal(isStoredResponseTooLarge({
+            message: "too large to store",
+            type: "response.completed",
+        }), false);
     });
 });

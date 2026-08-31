@@ -1,6 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveLoopNoveltyThreshold } from "./config.ts";
+import { isXaiChatModel } from "./models.ts";
 import {
     RepetitionDetector,
     type RepetitionContentKind,
@@ -67,7 +68,7 @@ export function registerLoopRecovery(pi: ExtensionAPI): void {
     });
 
     pi.on("message_update", (event, ctx) => {
-        if (ctx.model?.provider !== "xai") {
+        if (!isXaiChatModel(ctx.model)) {
             return;
         }
         const state = getState(sessions, ctx);

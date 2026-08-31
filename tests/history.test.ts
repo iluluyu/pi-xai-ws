@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+    clearOmittedImages,
     isResponsesThinkingSignature,
     limitContextImageBytes,
     sanitizeContextMessages,
@@ -192,5 +193,57 @@ describe("limitContextImageBytes", () => {
             ],
         };
         assert.equal(limitContextImageBytes(context, 100), context);
+    });
+
+    it("does not resurrect a previously omitted screenshot when a newer one arrives", () => {
+        const sessionId = "image-sticky-session";
+        clearOmittedImages(sessionId);
+        const older = {
+            role: "toolResult",
+            content: [{ type: "image", mimeType: "image/png", data: "A".repeat(20) }],
+        };
+        const middle = {
+            role: "toolResult",
+            content: [{ type: "image", mimeType: "image/png", data: "B".repeat(20) }],
+        };
+        const newest = {
+            role: "toolResult",
+            content: [{ type: "image", mimeType: "image/jpeg", data: "C".repeat(20) }],
+        };
+
+        const first = limitContextImageBytes({ messages: [older, middle, newest] }, 40, sessionId);
+        const firstOlder = first.messages[0] as { content: Array<{ type: string; text?: string }> };
+        assert.equal(firstOlder.content[0]?.type, "text");
+
+        const later = limitContextImageBytes({ messages: [older, middle] }, 40, sessionId);
+        const laterOlder = later.messages[0] as { content: Array<{ type: string; text?: string; data?: string }> };
+        const laterMiddle = later.messages[1] as { content: Array<{ type: string; data?: string }> };
+        assert.deepEqual(laterOlder.content[0], {
+            type: "text",
+            text: "[omitted earlier screenshot: image/png]",
+        });
+        assert.equal(laterMiddle.content[0]?.data, "B".repeat(20));
+        clearOmittedImages(sessionId);
+    });
+
+    it("still keeps the newest screenshot after it was omitted in an earlier window", () => {
+        const sessionId = "image-newest-session";
+        clearOmittedImages(sessionId);
+        const older = {
+            role: "toolResult",
+            content: [{ type: "image", mimeType: "image/png", data: "A".repeat(40) }],
+        };
+        const newer = {
+            role: "toolResult",
+            content: [{ type: "image", mimeType: "image/jpeg", data: "B".repeat(20) }],
+        };
+        limitContextImageBytes({ messages: [older, newer] }, 30, sessionId);
+        const onlyOlder = limitContextImageBytes({ messages: [older] }, 30, sessionId);
+        const image = (onlyOlder.messages[0] as {
+            content: Array<{ type: string; data?: string }>;
+        }).content[0];
+        assert.equal(image.type, "image");
+        assert.equal(image.data, "A".repeat(40));
+        clearOmittedImages(sessionId);
     });
 });

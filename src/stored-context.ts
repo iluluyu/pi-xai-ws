@@ -4,6 +4,7 @@ import { resolveMaxStoredContextTokens, storeResponsesEnabled } from "./config.t
 const COMPACTION_SUMMARY_PREFIX = "The conversation history before this point was compacted into the following summary:\n\n<summary>\n";
 const ESTIMATED_IMAGE_CHARS = 4_800;
 const safetyActiveSessions = new Set<string>();
+const storeRejectedAtMs = new Map<string, number>();
 const warnedSessions = new Set<string>();
 
 type MessageRecord = {
@@ -53,10 +54,39 @@ export function setStoredContextSafetyActive(sessionId: string | undefined, acti
     }
 }
 
+export function markStoredResponseTooLarge(sessionId: string | undefined): void {
+    const key = sessionId?.trim();
+    if (key) {
+        storeRejectedAtMs.set(key, Date.now());
+        safetyActiveSessions.add(key);
+    }
+}
+
+export function hasStoredResponseTooLarge(
+    sessionId: string | undefined,
+    messages: readonly unknown[],
+): boolean {
+    const key = sessionId?.trim();
+    if (!key) {
+        return false;
+    }
+    const rejectedAtMs = storeRejectedAtMs.get(key);
+    if (rejectedAtMs === undefined) {
+        return false;
+    }
+    const compactionTimestamp = latestCompactionTimestamp(messages);
+    if (compactionTimestamp > rejectedAtMs) {
+        storeRejectedAtMs.delete(key);
+        return false;
+    }
+    return true;
+}
+
 export function registerStoredContextSafety(pi: ExtensionAPI): void {
     const clearSession = (_event: unknown, ctx: ExtensionContext) => {
         const sessionId = ctx.sessionManager.getSessionId();
         safetyActiveSessions.delete(sessionId);
+        storeRejectedAtMs.delete(sessionId);
         warnedSessions.delete(sessionId);
     };
     pi.on("session_start", clearSession);
@@ -102,6 +132,14 @@ function findLatestCompactionIndex(messages: readonly unknown[]): number {
         }
     }
     return -1;
+}
+
+function latestCompactionTimestamp(messages: readonly unknown[]): number {
+    const index = findLatestCompactionIndex(messages);
+    if (index < 0) {
+        return 0;
+    }
+    return finiteNonnegative(asMessage(messages[index])?.timestamp);
 }
 
 function findLatestReliableUsage(

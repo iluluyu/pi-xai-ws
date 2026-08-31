@@ -60,7 +60,9 @@ Completions signatures. It retains JSON-shaped Responses signatures and removes
 field-name signatures such as `reasoning_content` before conversion. It also
 applies a newest-first image-byte budget before the payload is built. Older
 screenshot blocks become short text placeholders once the request exceeds 8MB
-of image data by default. Configure that with `maxRequestImageBytes` or
+of image data by default. Once omitted in a session, that screenshot stays
+omitted on later calls so a new shot does not resurrect an older image in the
+wire prefix. Configure that with `maxRequestImageBytes` or
 `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`. The newest screenshot is kept even when it
 alone exceeds the budget. This is a wire-size guard; Pi's session file still
 stores the original images.
@@ -88,7 +90,7 @@ off. Project-local config is intentionally unsupported so a repository cannot
 enable server-side retention.
 
 The same global config accepts `maxStoredContextTokens`, a positive integer that
-defaults to 220,000. A valid `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS` overrides it;
+defaults to 400,000. A valid `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS` overrides it;
 an invalid environment value falls back to the file and then the default. The
 value is a safety boundary for provider storage, not the model context window.
 
@@ -157,8 +159,11 @@ reference when any of these occur:
   compaction or an assistant-message edit.
 - A completed response added no new input items.
 - Pi could not project finalized assistant output into a reusable prefix.
-- The endpoint, credentials, headers, or other transport identity settings
-  changed. Stored response references never cross those boundaries.
+- The endpoint, conversation id, or other non-credential transport identity
+  settings changed. Stored response references never cross those boundaries.
+  A refreshed `Authorization` token on the same account reconnects the socket
+  and keeps the durable checkpoint. xAI still rejects a reference that belongs
+  to a different account, and that rejection falls back to full history once.
 - xAI rejects or no longer recognizes the reference before output begins. The
   live WebSocket error may contain only `Response with id=... not found`, with
   no structured code or parameter. The transport forgets both continuation
@@ -204,11 +209,14 @@ exact decision for the Pi extension event, which warns once while the safety
 mode remains active. Compaction normally lowers the estimate and allows stored
 continuation to start a fresh chain again.
 
-The 220,000-token default leaves headroom below the failure observed at roughly
-251,000 input tokens in a long SuperGrok OAuth tool loop. xAI does not currently
-document this storage limit, so the threshold is configurable. Current xAI
-WebSocket documentation says same-socket continuation supports `store: false`,
-but a direct SuperGrok OAuth probe on 2026-08-23 returned
+The 400,000-token default is above the failure observed at roughly 251,000 input
+tokens in a long SuperGrok OAuth tool loop on 2026-08-23. xAI does not document
+this storage limit, so the threshold is configurable. If a stored request is
+still rejected as too large, the transport keeps any streamed output, latches
+`store: false` until compaction, and does not retry that request. A rejection
+before output retries once with full local history and `store: false`.
+Current xAI WebSocket documentation says same-socket continuation supports
+`store: false`, but a direct SuperGrok OAuth probe on 2026-08-23 returned
 `Response with id=... not found` for that shape. The package therefore keeps
 sending full local history after the safety downgrade instead of relying on a
 continuation mode that the intended credential path rejects.
