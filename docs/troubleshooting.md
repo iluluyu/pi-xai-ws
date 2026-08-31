@@ -86,6 +86,33 @@ stored object during continuation. Configure the boundary with
 `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. Debug logs show
 `storage disabled for oversized context` when the guard activates.
 
+## Maximum prompt length is 500000
+
+xAI can reject a request when the reconstructed prompt exceeds the model
+context window, even if Pi has not compacted yet:
+
+```text
+gRPC error: This model's maximum prompt length is 500000 but the request contains 505171 tokens.
+```
+
+Pi auto-compacts when its estimated context is above
+`contextWindow - reserveTokens`. The defaults are `enabled: true`,
+`reserveTokens: 16384`, and `keepRecentTokens: 20000`. On `grok-4.6` that
+fires at 483,616 tokens. Pi also compact-retries after a context-overflow
+error.
+
+The estimate is last reliable `usage.totalTokens` plus a chars/4 guess for
+trailing messages. xAI's prompt length can be higher, especially with
+encrypted reasoning and large tool results, so a turn can still hit 500,000
+before the threshold check.
+
+This package does not compact for that window. `maxStoredContextTokens` is a
+stored-object safety bound, not a context-window setting. If overflow
+recovery is too late, raise Pi's `compaction.reserveTokens` in
+`getAgentDir()/settings.json`, for example `32768`, so the estimate trips
+sooner. That setting is global for every model. Leave `keepRecentTokens`
+alone unless you want a different amount of recent transcript after compact.
+
 ## WebSocket closed (1006) after screenshots
 
 A long thread with many Simulator or device screenshots can make a
