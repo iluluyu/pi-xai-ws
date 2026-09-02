@@ -74,17 +74,17 @@ Version 0.5.1 and earlier can surface this as a failed Pi turn. Set
 before retrying. That uses complete local history and avoids provider storage.
 Compact the thread to reduce its context before re-enabling stored mode.
 
-Newer package versions prevent the known failure path. At an estimated 400,000
-stored-conversation tokens by default, the extension warns once, clears the stored
-chain, and switches to full-history `store: false` requests until compaction
-reduces the context. If xAI still rejects a stored response as too large after
-output, the turn keeps the streamed output and storage stays off until compaction. The estimate is the conversation xAI would store: reliable provider usage plus
-trailing messages, including a large tool result added since the previous
-response. It does not use unsliced full-history JSON, which is larger than the
-stored object during continuation. Configure the boundary with
-`maxStoredContextTokens` in the global package config or a valid
-`PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. Debug logs show
-`storage disabled for oversized context` when the guard activates.
+Newer package versions keep streamed output if xAI rejects a stored response as
+too large after generation. Storage then stays off until compaction. There is no
+default preemptive cutoff, because SuperGrok OAuth still rejects same-socket
+`store: false` continuation and full-history fallbacks miss cache. Optionally
+configure `maxStoredContextTokens` in the global package config or a valid
+`PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS` to switch to full history before xAI
+rejects. The estimate is the conversation xAI would store: reliable provider
+usage plus trailing messages, including a large tool result added since the
+previous response. It does not use unsliced full-history JSON, which is larger
+than the stored object during continuation. Debug logs show
+`storage disabled for oversized context` when that optional guard activates.
 
 ## Maximum prompt length is 500000
 

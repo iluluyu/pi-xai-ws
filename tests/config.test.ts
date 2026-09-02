@@ -5,7 +5,6 @@ import { describe, it } from "node:test";
 import {
     DEFAULT_LOOP_NOVELTY_THRESHOLD,
     DEFAULT_MAX_REQUEST_IMAGE_BYTES,
-    DEFAULT_MAX_STORED_CONTEXT_TOKENS,
     cacheAffinityEnabled,
     resolveLoopNoveltyThreshold,
     resolveMaxRequestImageBytes,
@@ -134,15 +133,12 @@ describe("resolveLoopNoveltyThreshold", () => {
 });
 
 describe("resolveMaxStoredContextTokens", () => {
-    it("uses a safe default and accepts positive integer overrides", () => {
+    it("has no default cutoff and accepts positive integer overrides", () => {
         const previous = process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
         try {
             delete process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
             withConfigPath((configPath) => {
-                assert.equal(
-                    resolveMaxStoredContextTokens(configPath),
-                    DEFAULT_MAX_STORED_CONTEXT_TOKENS,
-                );
+                assert.equal(resolveMaxStoredContextTokens(configPath), undefined);
                 writeFileSync(configPath, JSON.stringify({ maxStoredContextTokens: 180_000 }));
                 assert.equal(resolveMaxStoredContextTokens(configPath), 180_000);
                 process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS = "190000";
@@ -152,10 +148,7 @@ describe("resolveMaxStoredContextTokens", () => {
                     assert.equal(resolveMaxStoredContextTokens(configPath), 180_000);
                 }
                 writeFileSync(configPath, JSON.stringify({ maxStoredContextTokens: 0 }));
-                assert.equal(
-                    resolveMaxStoredContextTokens(configPath),
-                    DEFAULT_MAX_STORED_CONTEXT_TOKENS,
-                );
+                assert.equal(resolveMaxStoredContextTokens(configPath), undefined);
             });
         } finally {
             if (previous === undefined) {

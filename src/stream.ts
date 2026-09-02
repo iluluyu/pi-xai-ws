@@ -84,21 +84,25 @@ export function streamXaiResponsesWs(
                 const normalized = normalizeWireRecordWithSize(payload);
                 payload = normalized.payload;
                 payloadNormalized = true;
-                const contextTokens = estimateStoredRequestTokens(
-                    providerContext.messages,
-                    normalized.tokenEstimate,
-                );
                 const maxStoredContextTokens = resolveMaxStoredContextTokens();
                 const rejectedStore = hasStoredResponseTooLarge(
                     preparedOptions.sessionId,
                     providerContext.messages,
                 );
-                storeResponses = contextTokens < maxStoredContextTokens && !rejectedStore;
-                if (!storeResponses && process.env.PI_XAI_WS_DEBUG === "1") {
-                    process.stderr.write(
-                        `[pi-xai-ws] storage disabled for oversized context context_tokens=${contextTokens} threshold=${maxStoredContextTokens} rejected=${rejectedStore}\n`,
+                let overThreshold = false;
+                if (maxStoredContextTokens !== undefined) {
+                    const contextTokens = estimateStoredRequestTokens(
+                        providerContext.messages,
+                        normalized.tokenEstimate,
                     );
+                    overThreshold = contextTokens >= maxStoredContextTokens;
+                    if (overThreshold && process.env.PI_XAI_WS_DEBUG === "1") {
+                        process.stderr.write(
+                            `[pi-xai-ws] storage disabled for oversized context context_tokens=${contextTokens} threshold=${maxStoredContextTokens} rejected=${rejectedStore}\n`,
+                        );
+                    }
                 }
+                storeResponses = !overThreshold && !rejectedStore;
             }
             setStoredContextSafetyActive(
                 preparedOptions.sessionId,

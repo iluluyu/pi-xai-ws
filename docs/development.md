@@ -113,21 +113,21 @@ Tests cover dates, custom `toJSON` methods, accessors, class instances, sparse
 arrays, and undefined array values. Avoid object-spread-only normalization,
 which does not match the actual JSON wire representation.
 
-Stored mode must also enforce `maxStoredContextTokens` after the payload hook.
-Estimate the conversation xAI would store from the latest reliable provider
-total usage plus trailing messages. Do not max that with unsliced prepared
-payload JSON: that JSON includes full local history, tools, and encrypted
-reasoning, and it will cross the threshold during continuation while usage is
-still safe. Use the prepared payload estimate only when there is no reliable provider
-usage yet. Recognize both raw compaction-summary messages and Pi's
-converted prefixed-user shape, then ignore retained pre-compaction usage by
-timestamp. Without reliable usage, estimate all current messages instead of
-failing open. Normalize early
-only when storage is configured and mark that payload for the pool so custom
-`toJSON` behavior still runs once. The default storage-off path skips the safety
-estimate. At the threshold, force `store: false`, remove continuation state, and
-send full local history. Record the exact stream decision for the extension
-warning. Never retry `Response is too large to store` after output begins. Keep the
+Stored mode may enforce `maxStoredContextTokens` after the payload hook when
+that cutoff is configured. There is no default cutoff. Estimate the conversation
+xAI would store from the latest reliable provider total usage plus trailing
+messages. Do not max that with unsliced prepared payload JSON: that JSON includes
+full local history, tools, and encrypted reasoning, and it will cross the
+threshold during continuation while usage is still safe. Use the prepared payload
+estimate only when there is no reliable provider usage yet. Recognize both raw
+compaction-summary messages and Pi's converted prefixed-user shape, then ignore
+retained pre-compaction usage by timestamp. Without reliable usage, estimate all
+current messages instead of failing open. Normalize early only when storage is
+configured and mark that payload for the pool so custom `toJSON` behavior still
+runs once. The default storage-off path skips the safety estimate. At a
+configured threshold, force `store: false`, remove continuation state, and send
+full local history. Record the exact stream decision for the extension warning.
+Never retry `Response is too large to store` after output begins. Keep the
 streamed output, latch `store: false` until a later compaction, and retry that
 request with `store: false` only when the rejection arrived before output.
 

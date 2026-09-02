@@ -75,7 +75,7 @@ model output begins.
 | `PI_XAI_WS_IDLE_TIMEOUT_MS`                 | `300000`                                                              | Idle milliseconds before the retained socket closes. The durable checkpoint stays in RAM for the process and on disk for later Pi processes.         |
 | `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`          | `0.85`                                                                | Fraction of recent thinking 5-grams that must already exist before the long-output novelty backstop stops a response.                           |
 | `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Hard maximum socket age. The default interrupts and retries an active request before xAI's 25-minute connection limit.                          |
-| `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | `400000`                                                              | Safety threshold for stored mode. At or above this estimated stored conversation size, calls switch to `store: false` until compaction reduces the context. |
+| `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | unset                                                                 | Optional preemptive stored-mode cutoff. At or above this estimated stored conversation size, calls switch to `store: false` until compaction. Unset means keep storing until xAI rejects a response as too large. |
 | `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`         | `8388608`                                                             | Newest-first budget for image bytes on the wire. Older screenshots become short placeholders so full-history requests stay under xAI's WebSocket size limit. Once omitted in a session, a screenshot stays omitted. |
 | `PI_XAI_WS_STORE`                           | unset                                                                 | Override stored-response continuation. `1` or `true` enables it; any other defined value disables it.                                          |
 | `PI_XAI_WS_DEBUG`                           | unset                                                                 | Set to `1` for lifecycle, request-shape, and recovery diagnostics. Logs exclude request data, credentials, generated text, and tool arguments. |
@@ -112,12 +112,12 @@ supported because a repository must not opt users into server-side retention.
 A missing, malformed, unreadable, or non-boolean config remains safely off.
 
 Stored mode also accepts an optional positive integer
-`maxStoredContextTokens`. It defaults to 400,000 and can be overridden by a
-valid `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. Invalid environment values fall
-back to the global config and then the default. This is a safety boundary for
-provider storage, not a model context-window setting. If xAI rejects a stored
-response as too large, the extension keeps any streamed output, disables storage
-until compaction, and does not retry that request.
+`maxStoredContextTokens`, overridden by a valid
+`PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`. There is no default cutoff. Invalid
+environment values fall back to the global config, then to no cutoff. This is a
+safety boundary for provider storage, not a model context-window setting. If xAI
+rejects a stored response as too large, the extension keeps any streamed output,
+disables storage until compaction, and does not retry that request.
 
 The same global file may set `loopNoveltyThreshold` to a ratio above zero and at
 most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is
@@ -133,14 +133,14 @@ most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is
   `previous_response_id` continuation. Same-socket calls send only the
   newest items. After reconnecting, including a new Pi process, the request
   resumes from the durable response checkpoint on disk and includes every
-  locally recorded item since it. When
-  the estimated stored conversation reaches the safety threshold, the
-  extension clears continuation state, warns once, and sends complete local
-  history with `store: false` until compaction reduces the context. The estimate
-  is reliable provider usage plus trailing messages, so a large new tool result
-  is included before the next request. It does not use unsliced full-history
-  JSON. Calls without
-  a session ID remain `store: false`. See
+  locally recorded item since it. If xAI rejects a stored response as too large,
+  the extension keeps streamed output, clears continuation, and sends complete
+  local history with `store: false` until compaction. An optional configured
+  `maxStoredContextTokens` cutoff can make that switch before xAI rejects. The
+  estimate, when used, is reliable provider usage plus trailing messages, so a
+  large new tool result is included before the next request. It does not use
+  unsliced full-history JSON. Calls without a session ID remain `store: false`.
+  See
   [Stored-response continuation](docs/transport.md#stored-response-continuation).
 - Encrypted Responses reasoning remains in local history and can be sent with
   the next request.

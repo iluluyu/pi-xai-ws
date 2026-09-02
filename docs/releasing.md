@@ -111,8 +111,8 @@ When validating the opt-in stored-response mode, set `storeResponses: true` in
 multi-turn probe with a nonempty Pi session ID and `PI_XAI_WS_DEBUG=1`. Require
 one `mode=full` first request and same-socket `mode=continue` follow-ups
 containing only new input items. This verifies the package-owned config path,
-not just the environment override. The default storage threshold is 400,000
-tokens, so a normal two-turn probe should stay in stored continuation.
+not just the environment override. There is no default storage-token cutoff, so
+a normal two-turn probe should stay in stored continuation.
 
 A refreshed SuperGrok `Authorization` token should reconnect the socket and keep
 the durable checkpoint. That path is covered by the session-pool regression;

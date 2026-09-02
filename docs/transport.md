@@ -89,10 +89,12 @@ it off. Missing, malformed, unreadable, and non-boolean config values remain
 off. Project-local config is intentionally unsupported so a repository cannot
 enable server-side retention.
 
-The same global config accepts `maxStoredContextTokens`, a positive integer that
-defaults to 400,000. A valid `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS` overrides it;
-an invalid environment value falls back to the file and then the default. The
-value is a safety boundary for provider storage, not the model context window.
+The same global config accepts an optional positive integer
+`maxStoredContextTokens`. A valid `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`
+overrides it; an invalid environment value falls back to the file, then to no
+cutoff. The value is a safety boundary for provider storage, not the model
+context window. Unset, stored continuation stays on until xAI rejects a
+response as too large.
 
 The session ID normally supplies both:
 
@@ -185,38 +187,37 @@ input item count.
 
 xAI can reject a long response after model output with `Response is too large to
 store`. A post-output retry would duplicate generated work, so the transport
-prevents that failure instead. Before each request it estimates the current
-context from the latest reliable provider total usage plus trailing messages.
-After compaction, retained pre-compaction usage is ignored. Pi converts the
-compaction entry to a prefixed user message before provider streaming, so the
-estimator recognizes both the raw extension shape and that wire-facing shape,
-then uses timestamps to reject retained older assistants. If no reliable usage
-exists, all current messages are estimated rather than allowing storage by
-default. The guard measures that stored conversation size, not the unsliced
-local wire JSON. A live continuation still sends only new items. Using the full
-prepared payload JSON as a max() would disable storage while usage is still well
-under the limit. The prepared payload estimate is used only when there is no reliable provider
-usage yet.
+keeps any streamed output, latches `store: false` until compaction, and does not
+retry that request. A rejection before output retries once with full local
+history and `store: false`.
 
-The opt-in stored path normalizes the post-hook payload once before estimating
-it and marks that record as already normalized for the session pool. The default
-storage-off path skips the estimate and keeps its existing one-shot wire
-normalization.
+If `maxStoredContextTokens` is configured, the transport also estimates the
+current stored conversation before each request from the latest reliable
+provider total usage plus trailing messages. Crossing that cutoff clears
+continuation state, warns once, and forces `store: false` plus complete local
+history until compaction lowers the estimate. After compaction, retained
+pre-compaction usage is ignored. Pi converts the compaction entry to a prefixed
+user message before provider streaming, so the estimator recognizes both the raw
+extension shape and that wire-facing shape, then uses timestamps to reject
+retained older assistants. If no reliable usage exists, all current messages are
+estimated rather than allowing storage by default. The guard measures that
+stored conversation size, not the unsliced local wire JSON. A live continuation
+still sends only new items. Using the full prepared payload JSON as a max()
+would disable storage while usage is still safe. The prepared payload estimate
+is used only when there is no reliable provider usage yet. There is no default
+cutoff: SuperGrok OAuth still rejects same-socket `store: false` continuation,
+so dropping `store` early forces full-history replays that miss cache.
 
-At or above `maxStoredContextTokens`, the transport clears continuation state
-and forces `store: false` plus complete local history. The stream records that
-exact decision for the Pi extension event, which warns once while the safety
-mode remains active. Compaction normally lowers the estimate and allows stored
-continuation to start a fresh chain again.
+The opt-in stored path always normalizes the post-hook payload once and marks
+that record as already normalized for the session pool. The estimate runs only
+when a cutoff is configured. The default storage-off path skips both and keeps
+its existing one-shot wire normalization.
 
-The 400,000-token default is above the failure observed at roughly 251,000 input
-tokens in a long SuperGrok OAuth tool loop on 2026-08-23. xAI does not document
-this storage limit, so the threshold is configurable. If a stored request is
-still rejected as too large, the transport keeps any streamed output, latches
-`store: false` until compaction, and does not retry that request. A rejection
-before output retries once with full local history and `store: false`.
+A long SuperGrok OAuth tool loop on 2026-08-23 failed at roughly 251,000 input
+tokens with `too large to store`. Later padded probes stored through 328,000, so
+billed tokens are a poor predictor.
 Current xAI WebSocket documentation says same-socket continuation supports
-`store: false`, but a direct SuperGrok OAuth probe on 2026-08-23 returned
+`store: false`, but SuperGrok OAuth probes on 2026-08-23 and 2026-09-02 returned
 `Response with id=... not found` for that shape. The package therefore keeps
 sending full local history after the safety downgrade instead of relying on a
 continuation mode that the intended credential path rejects.

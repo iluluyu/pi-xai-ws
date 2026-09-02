@@ -177,6 +177,50 @@ describe("stream stored-response continuation", () => {
         }
     });
 
+    it("keeps stored continuation for large usage when no token threshold is configured", async () => {
+        const requests: Array<Record<string, unknown>> = [];
+        const server = new WebSocketServer({ port: 0 });
+        await new Promise<void>((resolve) => server.once("listening", resolve));
+        const address = server.address();
+        assert.ok(address && typeof address === "object");
+        process.env.PI_XAI_WS_STORE = "1";
+        delete process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS;
+        process.env.PI_XAI_WS_URL = `ws://127.0.0.1:${address.port}`;
+        server.on("connection", (socket) => {
+            socket.on("message", (frame) => {
+                requests.push(JSON.parse(frame.toString()) as Record<string, unknown>);
+                send(socket, {
+                    response: { id: "response-large", output: [], status: "completed" },
+                    type: "response.completed",
+                });
+            });
+        });
+
+        try {
+            const model = responsesModel();
+            const user = { role: "user" as const, content: "first", timestamp: 1 };
+            const first = await collectMessage(model, { messages: [user] });
+            first.usage.input = 470_000;
+            first.usage.cacheRead = 12_000;
+            first.usage.totalTokens = 485_000;
+            await collectMessage(model, {
+                messages: [
+                    user,
+                    first,
+                    { role: "user", content: "continue", timestamp: 2 },
+                ],
+            });
+
+            assert.equal(requests.length, 2);
+            assert.equal(requests[0]?.store, true);
+            assert.equal(requests[1]?.store, true);
+            assert.equal(requests[1]?.previous_response_id, "response-large");
+        } finally {
+            defaultXaiWsSessionPool.closeAll();
+            await new Promise<void>((resolve) => server.close(() => resolve()));
+        }
+    });
+
     it("keeps continuation when unsliced payload JSON exceeds the storage threshold", async () => {
         const requests: Array<Record<string, unknown>> = [];
         const server = new WebSocketServer({ port: 0 });

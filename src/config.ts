@@ -6,7 +6,6 @@ import { DEFAULT_LIVENESS_TIMEOUT_MS, DEFAULT_PING_INTERVAL_MS } from "./livenes
 export const DEFAULT_WS_URL = "wss://api.x.ai/v1/responses";
 export const DEFAULT_LOOP_NOVELTY_THRESHOLD = 0.85;
 export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 8 * 1024 * 1024;
-export const DEFAULT_MAX_STORED_CONTEXT_TOKENS = 400_000;
 export const DEFAULT_WS_IDLE_TIMEOUT_MS = 5 * 60_000;
 export const DEFAULT_WS_MAX_AGE_MS = 24 * 60_000;
 export const XAI_WS_CONFIG_FILENAME = "pi-xai-ws.json";
@@ -60,13 +59,17 @@ export function resolveLoopNoveltyThreshold(configPath?: string): number {
     return ratio(configured) ?? DEFAULT_LOOP_NOVELTY_THRESHOLD;
 }
 
-export function resolveMaxStoredContextTokens(configPath?: string): number {
+/**
+ * Optional preemptive stored-context cutoff. Unset by default so SuperGrok
+ * stored continuation stays on until xAI rejects a response as too large.
+ * Same-socket `store: false` continuation is still rejected on that path.
+ */
+export function resolveMaxStoredContextTokens(configPath?: string): number | undefined {
     const envValue = positiveInteger(process.env.PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS);
     if (envValue !== undefined) {
         return envValue;
     }
-    const configured = readGlobalConfig(configPath)?.maxStoredContextTokens;
-    return positiveInteger(configured) ?? DEFAULT_MAX_STORED_CONTEXT_TOKENS;
+    return positiveInteger(readGlobalConfig(configPath)?.maxStoredContextTokens);
 }
 
 export function resolveMaxRequestImageBytes(configPath?: string): number {
