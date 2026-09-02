@@ -38,10 +38,10 @@ describe("pi-ai API compatibility loader", () => {
         try {
             const symlinkRoots =
                 createRequire(layout.binPi).resolve.paths("@earendil-works/pi-ai") ?? [];
-            const foundViaSymlink = symlinkRoots
+            const foundFixtureViaSymlink = symlinkRoots
                 .map((root) => join(root, marker))
-                .find((path) => existsSync(path));
-            assert.equal(foundViaSymlink, undefined);
+                .find((path) => path.startsWith(layout.root) && existsSync(path));
+            assert.equal(foundFixtureViaSymlink, undefined);
 
             const apiPath = resolvePiAiApiFile("openai-responses-shared", layout.binPi);
             assert.equal(apiPath, join(layout.piAiDist, "api", "openai-responses-shared.js"));

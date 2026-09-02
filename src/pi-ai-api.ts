@@ -49,11 +49,13 @@ export function resolvePiAiApiFile(name: string, fromPath = process.argv[1]): st
 function cliSeeds(fromPath: string | undefined): string[] {
     const seeds: string[] = [];
     if (fromPath) {
-        seeds.push(fromPath);
         try {
             seeds.push(realpathSync(fromPath));
         } catch {
-            // Keep the unresolved path.
+            // Keep the unresolved path below.
+        }
+        if (seeds[0] !== fromPath) {
+            seeds.push(fromPath);
         }
     }
     // node --test does not pass the Pi CLI as argv[1].
