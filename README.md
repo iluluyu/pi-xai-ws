@@ -163,6 +163,27 @@ most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is
 See [Transport design](docs/transport.md) for payload construction, lifecycle,
 liveness, replay rules, resource bounds, and Pi integration details.
 
+## Known limitations
+
+Version 1.0 keeps the transport behavior of 0.12.0. It does not guarantee
+uninterrupted cache hits or proactive avoidance of Grok's 500,000-token prompt
+limit.
+
+- Stored continuation reduces full-history requests. Cache affinity helps reuse
+  cached prefixes, but compaction, changed history, and rejected stored
+  references can still require a cold replay. A continuation sidecar does not
+  guarantee every reconnect can use it.
+- Pi owns context compaction. xAI can reject a reconstructed prompt even when
+  the last reported token usage is well below the limit. Raising Pi's global
+  compaction reserve is not a reliable fix for that discrepancy. See
+  [Maximum prompt length](docs/troubleshooting.md#maximum-prompt-length-is-500000).
+- SuperGrok OAuth rejects same-socket `store: false` continuation in the tested
+  request shape. Disabling storage requires full local history and can lose
+  cache reuse. Stored continuation remains an explicit retention opt-in, not a
+  requirement for using the extension.
+- Provider capacity errors can exhaust Pi's bounded retry budget. The transport
+  does not guarantee completion when xAI remains overloaded.
+
 ## Existing threads
 
 Existing threads continue to work. The extension drops legacy field-name

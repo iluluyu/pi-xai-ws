@@ -106,12 +106,27 @@ trailing messages. xAI's prompt length can be higher, especially with
 encrypted reasoning and large tool results, so a turn can still hit 500,000
 before the threshold check.
 
-This package does not compact for that window. `maxStoredContextTokens` is a
-stored-object safety bound, not a context-window setting. If overflow
-recovery is too late, raise Pi's `compaction.reserveTokens` in
-`getAgentDir()/settings.json`, for example `32768`, so the estimate trips
-sooner. That setting is global for every model. Leave `keepRecentTokens`
-alone unless you want a different amount of recent transcript after compact.
+This package does not proactively compact for that window or change Pi's
+compaction settings. Keep the default reserve unless there is evidence that the
+ordinary compaction threshold is too late for your workload. In that case,
+raising `compaction.reserveTokens` in `getAgentDir()/settings.json`, for example
+to `32768`, makes the estimate trip sooner. That setting is global for every
+model. Leave `keepRecentTokens` alone unless you want a different amount of
+recent transcript after compact.
+
+Earlier compaction is not a reliable fix for every overflow. Live Grok sessions
+have rejected reconstructed prompts above 500,000 tokens when the preceding
+reported usage was only about 119,000 to 214,000 tokens, already after
+compaction. Raising the reserve to `32768` would still leave those usage values
+below the compaction threshold. Do not treat reserve tuning as a fix for that
+discrepancy.
+
+Session usage alone cannot identify why continuation was lost or measure the
+provider's reconstructed prompt. Capture `PI_XAI_WS_DEBUG=1` request modes and
+recovery diagnostics before attributing these failures to a specific fallback.
+Do not use `maxStoredContextTokens` as a prompt-window workaround: it disables
+storage and forces full-history requests rather than asking Pi to compact. Do
+not remove encrypted reasoning from full-history replays.
 
 ## WebSocket closed (1006) after screenshots
 
