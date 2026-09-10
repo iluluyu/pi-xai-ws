@@ -165,9 +165,8 @@ liveness, replay rules, resource bounds, and Pi integration details.
 
 ## Known limitations
 
-Version 1.0 keeps the transport behavior of 0.12.0. It does not guarantee
-uninterrupted cache hits or proactive avoidance of Grok's 500,000-token prompt
-limit.
+This extension does not guarantee uninterrupted cache hits or proactive
+avoidance of Grok's 500,000-token prompt limit.
 
 - Stored continuation reduces full-history requests. Cache affinity helps reuse
   cached prefixes, but compaction, changed history, and rejected stored
