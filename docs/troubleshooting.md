@@ -331,4 +331,6 @@ the package contains `src/pi-ai-api.ts` and that the installed Pi version meets
 the README requirement. Direct `@earendil-works/pi-ai/api/...` runtime imports do not work
 from Pi's CJS extension loader: those exports have no `require` condition, and
 they are not on the aliased `/compat` module. The package loads `dist/api` files
-from the host CLI's node_modules instead.
+from the host CLI's node_modules when that tree exists. Compiled bun binaries
+have no on-disk `dist/api`; those hosts use the bundled Responses helpers that
+import the aliased `@earendil-works/pi-ai` compat surface.

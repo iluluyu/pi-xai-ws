@@ -59,6 +59,12 @@ describe("pi-ai API compatibility loader", () => {
         assert.equal(typeof buildBaseOptionsFn, "function");
     });
 
+    it("still locates dist/api when argv1 is a compiled-binary path", () => {
+        const apiPath = resolvePiAiApiFile("openai-responses-shared", "/$bunfs/root/pi");
+        assert.equal(existsSync(apiPath), true);
+        assert.equal(apiPath.endsWith(join("dist", "api", "openai-responses-shared.js")), true);
+    });
+
     it("finds dist/utils helpers next to dist/api", () => {
         const layout = makeGlobalPiLayout();
         try {

@@ -61,10 +61,14 @@ CLI's node_modules, so a packed install without peer packages still sees Pi's
 own tree when `pi` is a `bin/` symlink. Type-only imports from Pi's API
 subpaths are safe because TypeScript removes them.
 
-`resolvePiAiDistFile(directory, name)` resolves any other file under the host's
-`dist/` tree. `src/pi-ai-api.ts` uses it to load the transcript tool helper from
-`dist/utils/transcript.js`, and falls back to `Context.tools` when that helper
-is absent.
+Compiled bun and sea binaries have no on-disk `dist/api`. Skip `$bunfs` argv
+paths, then use `src/pi-ai-fallback/` copies that statically import the aliased
+`@earendil-works/pi-ai` compat surface. Native `createRequire("@earendil-works/pi-ai")`
+bypasses that alias and fails on those hosts.
+
+Read transcript tool declarations with `resolveTranscriptTools` from
+`@earendil-works/pi-ai`. That helper is on the compat surface, so it works on
+both Node CLI hosts and compiled binaries.
 
 ## Transcript context
 

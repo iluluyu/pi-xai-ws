@@ -2,6 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveTranscriptTools } from "@earendil-works/pi-ai";
 import type { clampOpenAIPromptCacheKey } from "@earendil-works/pi-ai/api/openai-prompt-cache";
 import type { buildBaseOptions } from "@earendil-works/pi-ai/api/simple-options";
 import type {
@@ -9,6 +10,13 @@ import type {
     convertResponsesTools,
     processResponsesStream,
 } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import { clampOpenAIPromptCacheKey as fallbackClampOpenAIPromptCacheKey } from "./pi-ai-fallback/openai-prompt-cache.ts";
+import {
+    convertResponsesMessages as fallbackConvertResponsesMessages,
+    convertResponsesTools as fallbackConvertResponsesTools,
+    processResponsesStream as fallbackProcessResponsesStream,
+} from "./pi-ai-fallback/openai-responses-shared.ts";
+import { buildBaseOptions as fallbackBuildBaseOptions } from "./pi-ai-fallback/simple-options.ts";
 
 const nativeRequire = createRequire(import.meta.url);
 
@@ -19,6 +27,11 @@ const nativeRequire = createRequire(import.meta.url);
  * normal import aborts every session. Load `dist/api/<name>.js` from the
  * host CLI's node_modules instead. Realpath `process.argv[1]` so a `bin/pi`
  * symlink still reaches a nested pi-ai tree.
+ *
+ * Compiled bun/sea binaries have no on-disk `dist/api`. Those hosts fall
+ * back to `src/pi-ai-fallback/`, which statically imports the aliased
+ * `@earendil-works/pi-ai` compat surface. Do not `createRequire` that
+ * specifier: native require bypasses Pi's alias and virtual modules.
  */
 export function resolvePiAiApiFile(name: string, fromPath = process.argv[1]): string {
     return resolvePiAiDistFile("api", name, fromPath);
@@ -60,9 +73,13 @@ export function resolvePiAiDistFile(
     );
 }
 
+function isCompiledBinaryPath(path: string): boolean {
+    return path.includes("/$bunfs/") || path.startsWith("/$bunfs");
+}
+
 function cliSeeds(fromPath: string | undefined): string[] {
     const seeds: string[] = [];
-    if (fromPath) {
+    if (fromPath && !isCompiledBinaryPath(fromPath)) {
         try {
             seeds.push(realpathSync(fromPath));
         } catch {
@@ -77,21 +94,9 @@ function cliSeeds(fromPath: string | undefined): string[] {
     return seeds;
 }
 
-function loadPiAiApiModule(name: string): Record<string, unknown> {
-    return nativeRequire(resolvePiAiApiFile(name)) as Record<string, unknown>;
-}
-
-/**
- * Load an optional helper from the host tree. Tool declarations live on the
- * transcript's system messages, and the helper that reads them back is loaded
- * from disk like the Responses API files.
- */
-function loadOptionalPiAiDistModule(
-    directory: string,
-    name: string,
-): Record<string, unknown> | undefined {
+function loadPiAiApiModule(name: string): Record<string, unknown> | undefined {
     try {
-        return nativeRequire(resolvePiAiDistFile(directory, name)) as Record<string, unknown>;
+        return nativeRequire(resolvePiAiApiFile(name)) as Record<string, unknown>;
     } catch {
         return undefined;
     }
@@ -101,34 +106,26 @@ const responsesShared = loadPiAiApiModule("openai-responses-shared");
 const promptCache = loadPiAiApiModule("openai-prompt-cache");
 const simpleOptions = loadPiAiApiModule("simple-options");
 
-export const processResponsesStreamFn = responsesShared[
-    "processResponsesStream"
-] as typeof processResponsesStream;
-export const convertResponsesMessagesFn = responsesShared[
-    "convertResponsesMessages"
-] as typeof convertResponsesMessages;
-export const convertResponsesToolsFn = responsesShared[
-    "convertResponsesTools"
-] as typeof convertResponsesTools;
-export const clampOpenAIPromptCacheKeyFn = promptCache[
-    "clampOpenAIPromptCacheKey"
-] as typeof clampOpenAIPromptCacheKey;
-export const buildBaseOptionsFn = simpleOptions["buildBaseOptions"] as typeof buildBaseOptions;
+export const processResponsesStreamFn = (responsesShared?.["processResponsesStream"] ??
+    fallbackProcessResponsesStream) as typeof processResponsesStream;
+export const convertResponsesMessagesFn = (responsesShared?.["convertResponsesMessages"] ??
+    fallbackConvertResponsesMessages) as typeof convertResponsesMessages;
+export const convertResponsesToolsFn = (responsesShared?.["convertResponsesTools"] ??
+    fallbackConvertResponsesTools) as typeof convertResponsesTools;
+export const clampOpenAIPromptCacheKeyFn = (promptCache?.["clampOpenAIPromptCacheKey"] ??
+    fallbackClampOpenAIPromptCacheKey) as typeof clampOpenAIPromptCacheKey;
+export const buildBaseOptionsFn = (simpleOptions?.["buildBaseOptions"] ??
+    fallbackBuildBaseOptions) as typeof buildBaseOptions;
 
 /**
- * `resolveTranscriptTools(messages, supportsToolAdditions)` from the host tree.
- * Undefined when the host does not export it, in which case `Context.tools` is used.
+ * `resolveTranscriptTools(messages, supportsToolAdditions)` from the aliased
+ * `@earendil-works/pi-ai` compat surface. Compiled binaries expose it there
+ * even when `dist/utils` is not on disk.
  */
 type TranscriptToolsResolver = (
     messages: readonly unknown[],
     supportsToolAdditions: boolean,
 ) => { requestTools?: readonly unknown[] } | undefined;
-
-const transcriptModule = loadOptionalPiAiDistModule("utils", "transcript");
-
-const resolveTranscriptToolsFn = (
-    transcriptModule?.["resolveTranscriptTools"] as TranscriptToolsResolver | undefined
-);
 
 /**
  * Tools the request must declare.
@@ -142,7 +139,7 @@ export function resolveRequestToolsFn(context: {
     messages?: readonly unknown[];
     tools?: readonly unknown[];
 }): readonly unknown[] {
-    return requestToolsForContext(context, resolveTranscriptToolsFn);
+    return requestToolsForContext(context, resolveTranscriptTools as TranscriptToolsResolver);
 }
 
 /**
@@ -154,13 +151,13 @@ export function requestToolsForContext(
         messages?: readonly unknown[];
         tools?: readonly unknown[];
     },
-    resolveTranscriptTools?: TranscriptToolsResolver,
+    resolveTranscriptToolsFn?: TranscriptToolsResolver,
 ): readonly unknown[] {
-    if (resolveTranscriptTools) {
+    if (resolveTranscriptToolsFn) {
         try {
             // The transport declares one complete tool list at the top level, so
             // it never anchors later additions at an individual message.
-            const resolved = resolveTranscriptTools(context.messages ?? [], false);
+            const resolved = resolveTranscriptToolsFn(context.messages ?? [], false);
             const declared = resolved?.requestTools;
             // An empty result means this host did not fold tool declarations into
             // the transcript, so a caller-supplied `Context.tools` still wins.
