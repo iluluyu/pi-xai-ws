@@ -6,6 +6,7 @@ import {
     clampOpenAIPromptCacheKeyFn,
     convertResponsesMessagesFn,
     convertResponsesToolsFn,
+    resolveRequestToolsFn,
 } from "./pi-ai-api.ts";
 import { cacheAffinityEnabled, storeResponsesEnabled } from "./config.ts";
 import { sanitizeContextMessages } from "./history.ts";
@@ -18,6 +19,17 @@ const ASSISTANT_RESPONSE_ITEM_TYPES = new Set([
 ]);
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
+
+/**
+ * The context shape this host's Responses helpers accept.
+ *
+ * Pi 0.86 brands the provider-facing context as `TranscriptContext` and folds
+ * the system prompt and tool declarations into its leading system message;
+ * earlier hosts passed the same object as `Context`. Pi only hands providers a
+ * normalized context, so the two shapes differ by brand alone and the helpers
+ * below receive the host's own type.
+ */
+type HostTranscriptContext = Parameters<typeof convertResponsesMessagesFn>[1];
 
 export function resolveApiKey(options?: SimpleStreamOptions): string {
     if (options?.apiKey) {
@@ -40,7 +52,12 @@ export function prepareResponseOptions(
     options: SimpleStreamOptions | undefined,
     apiKey: string,
 ): OpenAIResponsesOptions {
-    const base = buildBaseOptionsFn(model, context, options, apiKey) as StreamOptions;
+    const base = buildBaseOptionsFn(
+        model,
+        context as HostTranscriptContext,
+        options,
+        apiKey,
+    ) as StreamOptions;
     const clampedReasoning = options?.reasoning
         ? clampThinkingLevel(model, options.reasoning)
         : undefined;
@@ -56,7 +73,7 @@ export function projectAssistantResponse(
 ): readonly unknown[] {
     const projected = convertResponsesMessagesFn(
         model,
-        sanitizeContextMessages({ messages: [message] }),
+        sanitizeContextMessages({ messages: [message] }) as unknown as HostTranscriptContext,
         OPENAI_TOOL_CALL_PROVIDERS,
     ).filter((item) =>
         typeof item === "object" &&
@@ -71,14 +88,14 @@ export function buildResponseCreate(
     context: Context,
     options?: OpenAIResponsesOptions,
 ): Record<string, unknown> {
-    const tools = context.tools ?? [];
+    const tools = resolveRequestToolsFn(context) as Parameters<typeof convertResponsesToolsFn>[0];
     const payload: Record<string, unknown> = {
         type: "response.create",
         model: model.id,
         store: storeResponsesEnabled(),
         input: convertResponsesMessagesFn(
             model,
-            sanitizeContextMessages(context),
+            sanitizeContextMessages(context) as unknown as HostTranscriptContext,
             OPENAI_TOOL_CALL_PROVIDERS,
         ),
     };

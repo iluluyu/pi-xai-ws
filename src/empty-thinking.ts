@@ -117,7 +117,10 @@ export function registerEmptyThinkingNudge(pi: ExtensionAPI): void {
             model: ctx.model,
             priorAssistantCount: state.priorAssistantCount,
         });
-        if (isRecord(message) && message.role === "assistant") {
+        // Widened so the check also compiles when a host narrows this event's
+        // message type to a single role.
+        const role: unknown = isRecord(message) ? message.role : undefined;
+        if (role === "assistant") {
             state.priorAssistantCount += 1;
         }
         if (shouldNudge) {

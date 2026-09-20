@@ -43,6 +43,25 @@ contains the expanded local history. Stored mode normally shows one initial
 `mode=full` request followed by `mode=continue` requests until a recovery or
 stored-context safety downgrade occurs.
 
+## Grok writes tool calls as prose
+
+A turn that should call tools instead answers with text that names them, for
+example `invoke tool bash with command is uname -a`, an indexed list such as
+`0/ls|path|/home/luyu`, or a long repetition of tool names. Pi ends the run with
+`stop` and no tool call, and the repetition can also trip the loop recovery.
+
+The request declared no tools. Pi 0.86 replaces the provider-facing `Context`
+with a branded `TranscriptContext` whose leading system message carries the
+system prompt and the tool declarations, so a transport that still reads
+`Context.tools` sends no `tools` field at all. Grok then improvises the calls as
+text.
+
+`pi-xai-ws` reads tool declarations through Pi's `dist/utils/transcript.js`
+helper and falls back to `Context.tools` on older hosts. To confirm the wire
+shape, point the transport at a local WebSocket server with `PI_XAI_WS_URL` and
+inspect the `response.create` frame, or run with `PI_XAI_WS_DEBUG=1` and check
+that the turn's `toolcall` events reach Pi's session log.
+
 ## Stored-response config is not taking effect
 
 The global config is `getAgentDir()/pi-xai-ws.json`, normally

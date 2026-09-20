@@ -9,7 +9,10 @@ performance and coherent caching.
 
 ## Requirements
 
-`pi-xai-ws` requires Pi 0.84 or newer.
+`pi-xai-ws` requires Pi 0.84 or newer. Pi 0.86 moved tool declarations from
+`Context.tools` onto the transcript's leading system message; the transport
+declares tools from whichever shape the host supplies, so Grok tool calls work
+on both.
 
 ## Install
 
