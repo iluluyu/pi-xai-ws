@@ -9,7 +9,7 @@ performance and coherent caching.
 
 ## Requirements
 
-`pi-xai-ws` requires Pi 0.84 or newer.
+`pi-xai-ws` requires Pi 0.86.0 or newer.
 
 ## Install
 

@@ -21,6 +21,20 @@ const nativeRequire = createRequire(import.meta.url);
  * symlink still reaches a nested pi-ai tree.
  */
 export function resolvePiAiApiFile(name: string, fromPath = process.argv[1]): string {
+    return resolvePiAiDistFile("api", name, fromPath);
+}
+
+/**
+ * Resolve any file under the host CLI's `@earendil-works/pi-ai/dist/<directory>`
+ * tree. Pi aliases only `@earendil-works/pi-ai` and `/compat` for extensions, and
+ * the package's `exports` map has no `require` condition, so every helper this
+ * transport needs is loaded from disk instead of imported.
+ */
+export function resolvePiAiDistFile(
+    directory: string,
+    name: string,
+    fromPath = process.argv[1],
+): string {
     const fileName = `${name}.js`;
     const seen = new Set<string>();
     for (const seed of cliSeeds(fromPath)) {
@@ -31,7 +45,7 @@ export function resolvePiAiApiFile(name: string, fromPath = process.argv[1]): st
         try {
             const roots = createRequire(seed).resolve.paths("@earendil-works/pi-ai") ?? [];
             for (const root of roots) {
-                const apiPath = join(root, "@earendil-works", "pi-ai", "dist", "api", fileName);
+                const apiPath = join(root, "@earendil-works", "pi-ai", "dist", directory, fileName);
                 if (existsSync(apiPath)) {
                     return apiPath;
                 }
@@ -41,7 +55,7 @@ export function resolvePiAiApiFile(name: string, fromPath = process.argv[1]): st
         }
     }
     throw new Error(
-        `Unable to locate @earendil-works/pi-ai dist/api/${fileName}` +
+        `Unable to locate @earendil-works/pi-ai dist/${directory}/${fileName}` +
             ` (argv1=${process.argv[1] ?? ""}; fromPath=${fromPath ?? ""})`,
     );
 }
@@ -67,6 +81,22 @@ function loadPiAiApiModule(name: string): Record<string, unknown> {
     return nativeRequire(resolvePiAiApiFile(name)) as Record<string, unknown>;
 }
 
+/**
+ * Load an optional helper from the host tree. Tool declarations live on the
+ * transcript's system messages, and the helper that reads them back is loaded
+ * from disk like the Responses API files.
+ */
+function loadOptionalPiAiDistModule(
+    directory: string,
+    name: string,
+): Record<string, unknown> | undefined {
+    try {
+        return nativeRequire(resolvePiAiDistFile(directory, name)) as Record<string, unknown>;
+    } catch {
+        return undefined;
+    }
+}
+
 const responsesShared = loadPiAiApiModule("openai-responses-shared");
 const promptCache = loadPiAiApiModule("openai-prompt-cache");
 const simpleOptions = loadPiAiApiModule("simple-options");
@@ -84,3 +114,62 @@ export const clampOpenAIPromptCacheKeyFn = promptCache[
     "clampOpenAIPromptCacheKey"
 ] as typeof clampOpenAIPromptCacheKey;
 export const buildBaseOptionsFn = simpleOptions["buildBaseOptions"] as typeof buildBaseOptions;
+
+/**
+ * `resolveTranscriptTools(messages, supportsToolAdditions)` from the host tree.
+ * Undefined when the host does not export it, in which case `Context.tools` is used.
+ */
+type TranscriptToolsResolver = (
+    messages: readonly unknown[],
+    supportsToolAdditions: boolean,
+) => { requestTools?: readonly unknown[] } | undefined;
+
+const transcriptModule = loadOptionalPiAiDistModule("utils", "transcript");
+
+const resolveTranscriptToolsFn = (
+    transcriptModule?.["resolveTranscriptTools"] as TranscriptToolsResolver | undefined
+);
+
+/**
+ * Tools the request must declare.
+ *
+ * Provider-facing context is a branded transcript whose messages carry the
+ * system prompt and the tool declarations. Reading `Context.tools` there
+ * silently declares no tools at all, which makes Grok improvise tool calls as
+ * prose instead of calling them.
+ */
+export function resolveRequestToolsFn(context: {
+    messages?: readonly unknown[];
+    tools?: readonly unknown[];
+}): readonly unknown[] {
+    return requestToolsForContext(context, resolveTranscriptToolsFn);
+}
+
+/**
+ * Exported for tests: resolves the request tool list against an explicit
+ * resolver so both host shapes can be covered without a live Pi install.
+ */
+export function requestToolsForContext(
+    context: {
+        messages?: readonly unknown[];
+        tools?: readonly unknown[];
+    },
+    resolveTranscriptTools?: TranscriptToolsResolver,
+): readonly unknown[] {
+    if (resolveTranscriptTools) {
+        try {
+            // The transport declares one complete tool list at the top level, so
+            // it never anchors later additions at an individual message.
+            const resolved = resolveTranscriptTools(context.messages ?? [], false);
+            const declared = resolved?.requestTools;
+            // An empty result means this host did not fold tool declarations into
+            // the transcript, so a caller-supplied `Context.tools` still wins.
+            if (Array.isArray(declared) && declared.length > 0) {
+                return declared;
+            }
+        } catch {
+            // Fall through to the legacy shape below.
+        }
+    }
+    return context.tools ?? [];
+}

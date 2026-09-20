@@ -14,11 +14,11 @@ provider: xai
 api: openai-responses
 ```
 
-Pi's current remote catalog uses that API for `xai/grok-4.6`, while Pi 0.84.2's
-bundled xAI catalog labels the same model `openai-completions`. If a catalog
-refresh fails and Pi uses that bundled definition, it will not select this
-transport. Update Pi or refresh its model catalog rather than registering this
-extension against the wrong API.
+Pi's current remote catalog uses that API for `xai/grok-4.6`. An older bundled
+xAI catalog labels the same model `openai-completions`. If a catalog refresh
+fails and Pi uses that bundled definition, it will not select this transport.
+Update Pi or refresh its model catalog rather than registering this extension
+against the wrong API.
 
 Another extension can also replace the xAI provider registration. In
 particular, passing a `models` property to `registerProvider("xai", ...)`
@@ -42,6 +42,24 @@ A healthy default two-turn session should normally show one socket open and two
 contains the expanded local history. Stored mode normally shows one initial
 `mode=full` request followed by `mode=continue` requests until a recovery or
 stored-context safety downgrade occurs.
+
+## Grok writes tool calls as prose
+
+A turn that should call tools instead answers with text that names them, for
+example `invoke tool bash with command is uname -a`, an indexed list such as
+`0/ls|path|/home/luyu`, or a long repetition of tool names. Pi ends the run with
+`stop` and no tool call, and the repetition can also trip the loop recovery.
+
+The request declared no tools. Tool declarations live on the transcript's
+leading system message, so a transport that still reads `Context.tools` sends no
+`tools` field at all. Grok then improvises the calls as text.
+
+`pi-xai-ws` reads those declarations through Pi's host transcript helper.
+Update to a current package if an older install still shows this. To confirm
+the wire shape, point the transport at a local WebSocket server with
+`PI_XAI_WS_URL` and inspect the `response.create` frame, or run with
+`PI_XAI_WS_DEBUG=1` and check that the turn's `toolcall` events reach Pi's
+session log.
 
 ## Stored-response config is not taking effect
 
@@ -309,8 +327,8 @@ manager may report them as unmet when inspecting the extension's private npm
 installation even though Pi supplies them at load time.
 
 A real startup failure usually includes an extension import error. Confirm that
-the package contains `src/pi-ai-api.ts` and that the installed Pi version is
-0.84 or newer. Direct `@earendil-works/pi-ai/api/...` runtime imports do not work
+the package contains `src/pi-ai-api.ts` and that the installed Pi version meets
+the README requirement. Direct `@earendil-works/pi-ai/api/...` runtime imports do not work
 from Pi's CJS extension loader: those exports have no `require` condition, and
 they are not on the aliased `/compat` module. The package loads `dist/api` files
 from the host CLI's node_modules instead.

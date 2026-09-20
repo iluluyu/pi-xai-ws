@@ -43,7 +43,7 @@ extension loader.
 
 ## Pi compatibility imports
 
-Pi 0.84 aliases `@earendil-works/pi-ai` and `@earendil-works/pi-ai/compat`
+Pi aliases `@earendil-works/pi-ai` and `@earendil-works/pi-ai/compat`
 while loading extensions. A direct runtime import such as:
 
 ```ts
@@ -60,6 +60,26 @@ loader realpaths `process.argv[1]` and loads `dist/api/<name>.js` from the host
 CLI's node_modules, so a packed install without peer packages still sees Pi's
 own tree when `pi` is a `bin/` symlink. Type-only imports from Pi's API
 subpaths are safe because TypeScript removes them.
+
+`resolvePiAiDistFile(directory, name)` resolves any other file under the host's
+`dist/` tree. `src/pi-ai-api.ts` uses it to load the transcript tool helper from
+`dist/utils/transcript.js`, and falls back to `Context.tools` when that helper
+is absent.
+
+## Transcript context
+
+The provider-facing context is a branded `TranscriptContext`. The system prompt
+and tool declarations live on its leading system message. Read tools through
+`resolveRequestToolsFn` in `src/payload.ts`, which calls the host's
+`resolveTranscriptTools` helper. A transport that still reads `Context.tools`
+declares no tools, and Grok writes tool calls as prose instead of calling them.
+
+Compile against current Pi packages in `devDependencies` so `npm test` exercises
+that contract. `tests/payload.test.ts` covers a transcript `toolsAdded` system
+message and a `Context.tools` fallback.
+
+A host event may narrow a message type to a single role. Compare such a field
+through a widened local instead of an inline literal.
 
 Keep both Pi packages in `peerDependencies`. Pi supplies them to the extension
 at runtime, while the exact versions in `devDependencies` make local tests

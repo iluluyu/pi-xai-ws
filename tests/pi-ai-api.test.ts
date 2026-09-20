@@ -18,7 +18,9 @@ import {
     convertResponsesMessagesFn,
     convertResponsesToolsFn,
     processResponsesStreamFn,
+    requestToolsForContext,
     resolvePiAiApiFile,
+    resolvePiAiDistFile,
 } from "../src/pi-ai-api.ts";
 
 const repoRoot = join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -55,6 +57,66 @@ describe("pi-ai API compatibility loader", () => {
         assert.equal(typeof convertResponsesMessagesFn, "function");
         assert.equal(typeof convertResponsesToolsFn, "function");
         assert.equal(typeof buildBaseOptionsFn, "function");
+    });
+
+    it("finds dist/utils helpers next to dist/api", () => {
+        const layout = makeGlobalPiLayout();
+        try {
+            const transcriptPath = resolvePiAiDistFile("utils", "transcript", layout.binPi);
+            assert.equal(
+                transcriptPath,
+                join(layout.piAiDist, "utils", "transcript.js"),
+            );
+        } finally {
+            rmSync(layout.root, { recursive: true, force: true });
+        }
+    });
+
+    it("reports a missing dist helper with its directory in the message", () => {
+        const layout = makeGlobalPiLayout();
+        try {
+            assert.throws(
+                () => resolvePiAiDistFile("utils", "absent", layout.binPi),
+                /dist\/utils\/absent\.js/,
+            );
+        } finally {
+            rmSync(layout.root, { recursive: true, force: true });
+        }
+    });
+
+    it("reads tool declarations from a transcript system message", () => {
+        const declared = [{ name: "bash" }];
+        const tools = requestToolsForContext(
+            { messages: [{ role: "system", toolsAdded: declared }] },
+            () => ({ requestTools: declared }),
+        );
+        assert.deepEqual(tools, declared);
+    });
+
+    it("falls back to Context.tools when the transcript declares no tools", () => {
+        const legacy = [{ name: "bash" }];
+        assert.deepEqual(
+            requestToolsForContext(
+                { messages: [{ role: "user" }], tools: legacy },
+                () => ({ requestTools: [] }),
+            ),
+            legacy,
+        );
+        assert.deepEqual(requestToolsForContext({ messages: [], tools: legacy }), legacy);
+    });
+
+    it("survives a transcript helper that throws", () => {
+        const legacy = [{ name: "bash" }];
+        assert.deepEqual(
+            requestToolsForContext({ messages: [], tools: legacy }, () => {
+                throw new Error("host helper failed");
+            }),
+            legacy,
+        );
+    });
+
+    it("declares no tools when neither shape carries any", () => {
+        assert.deepEqual(requestToolsForContext({ messages: [] }, undefined), []);
     });
 
     it("loads the extension through Pi's jiti resolver", async () => {
@@ -102,6 +164,8 @@ function makeGlobalPiLayout(): { root: string; binPi: string; piAiDist: string }
     mkdirSync(binDir, { recursive: true });
     writeFileSync(cliJs, "export {}\n");
     writeFileSync(join(piAiDist, "api", "openai-responses-shared.js"), "export {}\n");
+    mkdirSync(join(piAiDist, "utils"), { recursive: true });
+    writeFileSync(join(piAiDist, "utils", "transcript.js"), "export {}\n");
     symlinkSync(cliJs, binPi);
     return { root, binPi, piAiDist };
 }

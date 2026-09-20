@@ -21,6 +21,52 @@ function context(content = "hello"): Context {
     };
 }
 
+describe("Responses payload tools", () => {
+    const tool = {
+        name: "bash",
+        description: "run a shell command",
+        parameters: { type: "object", properties: {} },
+    };
+
+    it("declares tools carried by a transcript system message", () => {
+        // Tool declarations live on the leading system message. Reading
+        // `Context.tools` there declared no tools at all, so Grok improvised
+        // tool calls as prose instead of calling them.
+        const transcript = {
+            messages: [
+                { role: "system", content: "You are a coding assistant.", toolsAdded: [tool] },
+                { role: "user", content: "hello", timestamp: 1 },
+            ],
+        };
+        const payload = buildResponseCreate(
+            responsesModel(),
+            transcript as unknown as Context,
+            prepareResponseOptions(responsesModel(), context(), undefined, "api-key"),
+        );
+
+        const declared = payload.tools as Array<Record<string, unknown>> | undefined;
+        assert.ok(Array.isArray(declared), "transcript tool declarations must reach the request");
+        assert.equal(declared.length, 1);
+        assert.equal(declared[0]?.name, "bash");
+    });
+
+    it("still declares Context.tools for hosts without transcript declarations", () => {
+        const payload = buildResponseCreate(responsesModel(), {
+            ...context(),
+            tools: [tool],
+        } as Context);
+
+        const declared = payload.tools as Array<Record<string, unknown>> | undefined;
+        assert.ok(Array.isArray(declared));
+        assert.equal(declared.length, 1);
+        assert.equal(declared[0]?.name, "bash");
+    });
+
+    it("omits the tools field when the request declares none", () => {
+        assert.equal(buildResponseCreate(responsesModel(), context()).tools, undefined);
+    });
+});
+
 describe("Responses payload options", () => {
     it("derives Pi's context-aware output cap when maxTokens is omitted", () => {
         const model = responsesModel();
