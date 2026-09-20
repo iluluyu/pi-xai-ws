@@ -43,7 +43,7 @@ extension loader.
 
 ## Pi compatibility imports
 
-Pi 0.84 aliases `@earendil-works/pi-ai` and `@earendil-works/pi-ai/compat`
+Pi aliases `@earendil-works/pi-ai` and `@earendil-works/pi-ai/compat`
 while loading extensions. A direct runtime import such as:
 
 ```ts
@@ -62,26 +62,24 @@ own tree when `pi` is a `bin/` symlink. Type-only imports from Pi's API
 subpaths are safe because TypeScript removes them.
 
 `resolvePiAiDistFile(directory, name)` resolves any other file under the host's
-`dist/` tree. `src/pi-ai-api.ts` uses it to load optional helpers that only
-exist on newer Pi versions, such as the `dist/utils/transcript.js` tool
-resolver, and falls back when the host predates them.
+`dist/` tree. `src/pi-ai-api.ts` uses it to load the transcript tool helper from
+`dist/utils/transcript.js`, and falls back to `Context.tools` when that helper
+is absent.
 
-## Pi 0.86 transcript context
+## Transcript context
 
-Pi 0.86 brands the provider-facing context as `TranscriptContext` and folds
-`systemPrompt` and `tools` into its leading system message. Pi only hands
-providers a normalized context, so a provider that still reads `Context.tools`
-declares no tools at all; Grok then writes tool calls as prose instead of
-calling them.
+The provider-facing context is a branded `TranscriptContext`. The system prompt
+and tool declarations live on its leading system message. Read tools through
+`resolveRequestToolsFn` in `src/payload.ts`, which calls the host's
+`resolveTranscriptTools` helper. A transport that still reads `Context.tools`
+declares no tools, and Grok writes tool calls as prose instead of calling them.
 
-Keep the tool list read through `resolveRequestToolsFn` in `src/payload.ts`.
-Compile against the newest Pi packages in `devDependencies` so `npm test`
-exercises the current contract, and keep the `Context.tools` fallback so hosts
-older than 0.86 still declare tools. `tests/payload.test.ts` covers both shapes.
+Compile against current Pi packages in `devDependencies` so `npm test` exercises
+that contract. `tests/payload.test.ts` covers a transcript `toolsAdded` system
+message and a `Context.tools` fallback.
 
 A host event may narrow a message type to a single role. Compare such a field
-through a widened local instead of an inline literal, so the check compiles
-against every host version.
+through a widened local instead of an inline literal.
 
 Keep both Pi packages in `peerDependencies`. Pi supplies them to the extension
 at runtime, while the exact versions in `devDependencies` make local tests

@@ -84,7 +84,7 @@ describe("pi-ai API compatibility loader", () => {
         }
     });
 
-    it("reads tool declarations from a Pi 0.86 transcript", () => {
+    it("reads tool declarations from a transcript system message", () => {
         const declared = [{ name: "bash" }];
         const tools = requestToolsForContext(
             { messages: [{ role: "system", toolsAdded: declared }] },

@@ -28,11 +28,10 @@ describe("Responses payload tools", () => {
         parameters: { type: "object", properties: {} },
     };
 
-    it("declares tools carried by a Pi 0.86 transcript system message", () => {
-        // Pi 0.86 folds `systemPrompt` and `tools` into a leading system message,
-        // and only that message reaches the provider. Reading `Context.tools`
-        // there declared no tools at all, so Grok improvised tool calls as prose
-        // instead of calling them.
+    it("declares tools carried by a transcript system message", () => {
+        // Tool declarations live on the leading system message. Reading
+        // `Context.tools` there declared no tools at all, so Grok improvised
+        // tool calls as prose instead of calling them.
         const transcript = {
             messages: [
                 { role: "system", content: "You are a coding assistant.", toolsAdded: [tool] },

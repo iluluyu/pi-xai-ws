@@ -23,11 +23,9 @@ const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
 /**
  * The context shape this host's Responses helpers accept.
  *
- * Pi 0.86 brands the provider-facing context as `TranscriptContext` and folds
- * the system prompt and tool declarations into its leading system message;
- * earlier hosts passed the same object as `Context`. Pi only hands providers a
- * normalized context, so the two shapes differ by brand alone and the helpers
- * below receive the host's own type.
+ * Provider-facing context is a branded transcript whose system messages carry
+ * the prompt and tool declarations. Pi only hands providers a normalized
+ * context, so the helpers below receive the host's own type.
  */
 type HostTranscriptContext = Parameters<typeof convertResponsesMessagesFn>[1];
 

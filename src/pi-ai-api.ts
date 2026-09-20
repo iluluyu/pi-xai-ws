@@ -82,9 +82,9 @@ function loadPiAiApiModule(name: string): Record<string, unknown> {
 }
 
 /**
- * Load an optional helper from the host tree. Pi 0.86 moved tool declarations
- * off `Context.tools` and onto the transcript's system messages, so the helper
- * that reads them back only exists on newer hosts.
+ * Load an optional helper from the host tree. Tool declarations live on the
+ * transcript's system messages, and the helper that reads them back is loaded
+ * from disk like the Responses API files.
  */
 function loadOptionalPiAiDistModule(
     directory: string,
@@ -117,7 +117,7 @@ export const buildBaseOptionsFn = simpleOptions["buildBaseOptions"] as typeof bu
 
 /**
  * `resolveTranscriptTools(messages, supportsToolAdditions)` from the host tree.
- * Undefined on Pi hosts older than 0.86, which carried tools on `Context.tools`.
+ * Undefined when the host does not export it, in which case `Context.tools` is used.
  */
 type TranscriptToolsResolver = (
     messages: readonly unknown[],
@@ -133,11 +133,10 @@ const resolveTranscriptToolsFn = (
 /**
  * Tools the request must declare.
  *
- * Pi 0.86 replaced the provider-facing `Context` with a branded
- * `TranscriptContext` whose `messages` carry the system prompt and the tool
- * declarations. Reading `Context.tools` there silently declares no tools at
- * all, which makes Grok improvise tool calls as prose instead of calling them.
- * Older hosts still supply `Context.tools`.
+ * Provider-facing context is a branded transcript whose messages carry the
+ * system prompt and the tool declarations. Reading `Context.tools` there
+ * silently declares no tools at all, which makes Grok improvise tool calls as
+ * prose instead of calling them.
  */
 export function resolveRequestToolsFn(context: {
     messages?: readonly unknown[];
