@@ -40,9 +40,11 @@ pi remove npm:@mwolson-org/pi-xai-ws
 
 ## Recommended Pi retry settings
 
-The extension marks recognized xAI capacity errors as "overloaded" and
-retryable WebSocket transport failures as socket errors so Pi can apply its
-agent-level retry policy. Pi enables that policy by default. For
+The extension marks recognized xAI capacity and temporary availability errors
+as "overloaded" and retryable WebSocket transport failures as socket errors so
+Pi can apply its agent-level retry policy. Availability wording such as
+"temporarily unavailable" and "currently degraded" is included, because Pi does
+not treat those phrases as transient on its own. Pi enables that policy by default. For
 longer Grok jobs, these optional agent-wide settings raise the retry budget and
 backoff for every provider. Merge them into the global Pi settings file at
 `getAgentDir()/settings.json`, normally `~/.pi/agent/settings.json`:

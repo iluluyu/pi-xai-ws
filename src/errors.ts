@@ -1,4 +1,5 @@
-const XAI_CAPACITY_ERROR_PATTERN = /\bcurrently at capacity\b|\bdue to high demand\b/i;
+const XAI_CAPACITY_ERROR_PATTERN =
+    /\b(?:currently at capacity|due to high demand|temporarily unavailable|currently degraded)\b/i;
 const XAI_CONNECTION_LIMIT_ERROR_PATTERN = /\bwebsocket_connection_limit_reached\b/i;
 
 export function normalizeXaiErrorMessage(

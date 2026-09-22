@@ -383,8 +383,12 @@ an unbounded list of parsed provider objects.
 
 xAI error envelopes can be direct, nested, or loosely typed. The transport
 normalizes them before Pi's Responses processor sees them. Recognized capacity
-messages keep xAI's original text and add Pi's `overloaded` marker so Pi can
-apply its own retry budget and backoff. The exact
+and temporary availability messages keep xAI's original text and add Pi's
+`overloaded` marker so Pi can apply its own retry budget and backoff. That
+includes `currently at capacity`, `due to high demand`, `temporarily
+unavailable`, and `currently degraded`. Pi's classifier does not match
+"Service temporarily unavailable" by itself, because its `service unavailable`
+pattern requires those words to be adjacent. The exact
 `websocket_connection_limit_reached` code similarly gains a `WebSocket error`
 marker after the exhausted socket is retired.
 

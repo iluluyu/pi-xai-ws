@@ -19,6 +19,12 @@ describe("normalizeXaiErrorMessage", () => {
             normalizeXaiErrorMessage(transportMessage),
             `Provider overloaded: ${transportMessage}`,
         );
+        const degradedMessage =
+            "Error Code undefined: Service temporarily unavailable. The model's availability is currently degraded.";
+        assert.equal(
+            normalizeXaiErrorMessage(degradedMessage),
+            `Provider overloaded: ${degradedMessage}`,
+        );
     });
 
     it("maps xAI's hard socket limit to Pi's retryable WebSocket vocabulary", () => {

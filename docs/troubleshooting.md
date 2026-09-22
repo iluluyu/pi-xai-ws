@@ -235,7 +235,9 @@ The extension does not retry malformed frames, queue overflows, local payload
 limits, aborts, or failures after output starts. Reasoning summaries, refusals,
 function-call arguments, custom-tool input, and provider-tool lifecycle events
 all count as output. Pi may separately start a new assistant attempt when its
-configured retry policy classifies the reported error as transient. Failed and
+configured retry policy classifies the reported error as transient. Capacity
+and degraded-availability errors, including a post-output "currently degraded"
+failure, are marked overloaded so that outer retry can run. Failed and
 aborted assistant attempts remain visible in Pi's session log but are excluded
 from future xAI request context.
 
