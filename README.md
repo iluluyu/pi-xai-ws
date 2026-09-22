@@ -76,6 +76,9 @@ model output begins.
 | `PI_XAI_WS_LIVENESS_TIMEOUT_MS` | Pi's stream timeout                                                    | Additional inbound silence after the ping before the turn fails. When unset, the combined ping and liveness window follows Pi's `timeoutMs`, normally 300 seconds. |
 | `PI_XAI_WS_IDLE_TIMEOUT_MS`                 | `300000`                                                              | Idle milliseconds before the retained socket closes. The durable checkpoint stays in RAM for the process and on disk for later Pi processes.         |
 | `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`          | `0.85`                                                                | Fraction of recent thinking 5-grams that must already exist before the long-output novelty backstop stops a response.                           |
+| `PI_XAI_WS_LOOP_RECOVERY_LIMIT`             | `2`                                                                   | Automatic recoveries allowed inside `PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS`. `0` disables compaction and recovery steering; detection and abort still fire. |
+| `PI_XAI_WS_LOOP_RECOVERY_COOLDOWN_MS`       | `600000`                                                              | Minimum milliseconds between two automatic recoveries. Must be positive; zero or invalid values fall back to the default.                       |
+| `PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS`         | `1800000`                                                             | Rolling window in milliseconds over which the recovery limit is counted. Each recovery ages out individually after this interval. The limit binds only when it exceeds `limit x cooldown`. `0` makes a spent budget permanent for the session. |
 | `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Hard maximum socket age. The default interrupts and retries an active request before xAI's 25-minute connection limit.                          |
 | `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | unset                                                                 | Optional preemptive stored-mode cutoff. At or above this estimated stored conversation size, calls switch to `store: false` until compaction. Unset means keep storing until xAI rejects a response as too large. |
 | `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`         | `8388608`                                                             | Newest-first budget for image bytes on the wire. Older screenshots become short placeholders so full-history requests stay under xAI's WebSocket size limit. Once omitted in a session, a screenshot stays omitted. |
@@ -125,6 +128,16 @@ The same global file may set `loopNoveltyThreshold` to a ratio above zero and at
 most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is
 `0.85`; invalid values fall back to the file and then the default.
 
+Automatic recovery is bounded by `loopRecoveryLimit` (default `2`) recoveries
+per rolling `loopRecoveryBudgetMs` (default `1800000`), with at least
+`loopRecoveryCooldownMs` (default `600000`) between them.
+`PI_XAI_WS_LOOP_RECOVERY_LIMIT`, `PI_XAI_WS_LOOP_RECOVERY_COOLDOWN_MS`, and
+`PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS` take precedence; invalid values fall back to
+the file and then the default. A `loopRecoveryLimit` of zero disables compaction
+and steering. A `loopRecoveryBudgetMs` of zero makes a spent budget permanent.
+The limit binds only while the window can hold more recoveries than the limit, so
+keep `loopRecoveryBudgetMs` above `loopRecoveryLimit x loopRecoveryCooldownMs`.
+
 ## How it works
 
 - A Pi session reuses one WebSocket and serializes model calls through it.
@@ -159,7 +172,10 @@ most one. `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD` takes precedence. The default is
 - Bounded exact, near-duplicate, and low-novelty checks stop repetitive xAI
   thinking or prose. The extension sanitizes the unfinished assistant message,
   compacts the context when useful, and queues one hidden recovery turn. A
-  recurrence within ten minutes stops without another automatic compaction.
+  recurrence inside the cooldown is stopped without another automatic compaction.
+  Each recovery ages out of the budget individually, so a spent budget is not
+  permanent. A real user turn re-arms the budget and the cooldown; hidden steers
+  do not, so an unattended session keeps its bound.
 - Sockets enable TCP keepalive and have fixed memory, age, and idle bounds.
 
 See [Transport design](docs/transport.md) for payload construction, lifecycle,
