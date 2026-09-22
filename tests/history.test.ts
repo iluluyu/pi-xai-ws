@@ -38,7 +38,7 @@ describe("sanitizeContextMessages", () => {
                     role: "assistant",
                     api: "openai-responses",
                     provider: "xai",
-                    model: "grok-4.6",
+                    model: "grok-4.7",
                     content: [
                         { type: "thinking", thinking: "old", thinkingSignature: "reasoning_content" },
                         { type: "thinking", thinking: "new", thinkingSignature: responsesSignature },

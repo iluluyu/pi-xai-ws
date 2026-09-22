@@ -14,7 +14,7 @@ provider: xai
 api: openai-responses
 ```
 
-Pi's current remote catalog uses that API for `xai/grok-4.6`. An older bundled
+Pi's current remote catalog uses that API for `xai/grok-4.7`. An older bundled
 xAI catalog labels the same model `openai-completions`. If a catalog refresh
 fails and Pi uses that bundled definition, it will not select this transport.
 Update Pi or refresh its model catalog rather than registering this extension
@@ -115,7 +115,7 @@ gRPC error: This model's maximum prompt length is 500000 but the request contain
 
 Pi auto-compacts when its estimated context is above
 `contextWindow - reserveTokens`. The defaults are `enabled: true`,
-`reserveTokens: 16384`, and `keepRecentTokens: 20000`. On `grok-4.6` that
+`reserveTokens: 16384`, and `keepRecentTokens: 20000`. On `grok-4.7` that
 fires at 483,616 tokens. Pi also compact-retries after a context-overflow
 error.
 

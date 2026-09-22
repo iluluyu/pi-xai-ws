@@ -15,7 +15,7 @@ npm run test:catalog
 
 `npm test` runs strict TypeScript checking before the package unit and transport
 tests. `npm run test:catalog` is separate because it fetches Pi's current xAI
-catalog and verifies that `grok-4.6` still resolves to `openai-responses`.
+catalog and verifies that `grok-4.7` still resolves to `openai-responses`.
 
 ## Source layout
 

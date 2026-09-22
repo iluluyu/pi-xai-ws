@@ -43,7 +43,7 @@ function responsesModel(): Model<"openai-responses"> {
         (candidate) => candidate.api === "openai-responses",
     );
     assert.ok(model);
-    return { ...model, id: "grok-4.6" } as Model<"openai-responses">;
+    return { ...model, id: "grok-4.7" } as Model<"openai-responses">;
 }
 
 async function collectMessage(
@@ -301,7 +301,7 @@ describe("stream stored-response continuation", () => {
             content: [{ type: "text", text: "retained answer" }],
             api: "openai-responses",
             provider: "xai",
-            model: "grok-4.6",
+            model: "grok-4.7",
             usage: {
                 input: 250_000,
                 output: 100,

@@ -214,7 +214,7 @@ function thinkingOnly() {
 }
 
 function grokModel() {
-    return { id: "grok-4.6", provider: "xai" };
+    return { id: "grok-4.7", provider: "xai" };
 }
 
 function setupNudge(model = grokModel()) {

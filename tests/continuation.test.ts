@@ -14,7 +14,7 @@ import {
 function basePayload(input: unknown[]): Record<string, unknown> {
     return {
         input,
-        model: "grok-4.6",
+        model: "grok-4.7",
         store: false,
         type: "response.create",
     };

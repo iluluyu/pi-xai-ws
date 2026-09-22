@@ -387,7 +387,7 @@ function assistantMessage(timestamp: number, content: AssistantMessage["content"
     return {
         api: "openai-responses",
         content,
-        model: "grok-4.6",
+        model: "grok-4.7",
         provider: "xai",
         role: "assistant",
         stopReason: "aborted",
@@ -482,7 +482,7 @@ function restoreEnv(name: string, value: string | undefined): void {
     }
 }
 
-function setupRecovery(model = { id: "grok-4.6", provider: "xai" }) {
+function setupRecovery(model = { id: "grok-4.7", provider: "xai" }) {
     const aborts: boolean[] = [];
     const compactions: Array<{
         customInstructions?: string;

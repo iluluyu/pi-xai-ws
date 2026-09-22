@@ -36,7 +36,7 @@ async function collect(
     for await (const event of iterateXaiWsEvents({
         url,
         headers: {},
-        createPayload: { type: "response.create", model: "grok-4.6" },
+        createPayload: { type: "response.create", model: "grok-4.7" },
         ...extras,
     })) {
         events.push(event);
@@ -128,7 +128,7 @@ describe("iterateXaiWsEvents", () => {
                 const iter = iterateXaiWsEvents({
                     url,
                     headers: {},
-                    createPayload: { type: "response.create", model: "grok-4.6" },
+                    createPayload: { type: "response.create", model: "grok-4.7" },
                     signal: controller.signal,
                 });
                 const first = await iter.next();

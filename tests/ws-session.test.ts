@@ -87,7 +87,7 @@ function requestOptions(
         createPayload: {
             input,
             max_output_tokens: 256,
-            model: "grok-4.6",
+            model: "grok-4.7",
             prompt_cache_key: "cache-key",
             reasoning: { effort: "high", summary: "auto" },
             store: false,

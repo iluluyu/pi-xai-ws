@@ -80,7 +80,7 @@ Return to the repository root after the smoke test and delete `$SMOKE`.
 ## 4. Run a live two-turn probe
 
 Use a temporary Pi session with SuperGrok OAuth and
-`PI_XAI_WS_DEBUG=1`. Send two model calls through `xai/grok-4.6` in the same Pi
+`PI_XAI_WS_DEBUG=1`. Send two model calls through `xai/grok-4.7` in the same Pi
 session.
 
 Verify these facts:
@@ -238,7 +238,7 @@ pi update npm:@mwolson-org/pi-xai-ws
 ```
 
 Start a fresh Pi process and a fresh session. Confirm that Pi discovers the new
-package version and resolves `xai/grok-4.6` to the extension's
+package version and resolves `xai/grok-4.7` to the extension's
 `openai-responses` stream. Run one short prompt with debug logging enabled.
 
 Only investigate or rebuild a downstream host application if that fresh process
