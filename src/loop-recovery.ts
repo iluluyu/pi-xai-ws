@@ -139,7 +139,7 @@ export function registerLoopRecovery(pi: ExtensionAPI): void {
             detection,
         };
         ctx.abort();
-        notifyDetection(ctx, recovery);
+        notifyDetection(ctx, recovery, policy);
         debugDetection(detection, ctx);
     });
 
@@ -299,7 +299,11 @@ function isNoopCompactionError(error: Error): boolean {
         error.message === "Nothing to compact (session too small)";
 }
 
-function notifyDetection(ctx: ExtensionContext, recovery: RecoveryDecision): void {
+function notifyDetection(
+    ctx: ExtensionContext,
+    recovery: RecoveryDecision,
+    policy: LoopRecoveryPolicy,
+): void {
     if (!ctx.hasUI) {
         return;
     }
@@ -313,7 +317,9 @@ function notifyDetection(ctx: ExtensionContext, recovery: RecoveryDecision): voi
     } else if (recovery.denialReason === "cooldown") {
         message = "Stopped repetitive Grok output. Automatic recovery is paused because another loop occurred recently.";
     } else if (recovery.denialReason === "session-limit") {
-        message = "Stopped repetitive Grok output. This session has reached its automatic recovery limit.";
+        message = policy.budgetMs === 0
+            ? "Stopped repetitive Grok output. This session has reached its automatic recovery limit."
+            : "Stopped repetitive Grok output. Automatic recovery is paused until an earlier recovery leaves the budget window, or until you send another message.";
     }
     ctx.ui.notify(message, "error");
 }

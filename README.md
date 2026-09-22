@@ -78,7 +78,7 @@ model output begins.
 | `PI_XAI_WS_LOOP_NOVELTY_THRESHOLD`          | `0.85`                                                                | Fraction of recent thinking 5-grams that must already exist before the long-output novelty backstop stops a response.                           |
 | `PI_XAI_WS_LOOP_RECOVERY_LIMIT`             | `2`                                                                   | Automatic recoveries allowed inside `PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS`. `0` disables compaction and recovery steering; detection and abort still fire. |
 | `PI_XAI_WS_LOOP_RECOVERY_COOLDOWN_MS`       | `600000`                                                              | Minimum milliseconds between two automatic recoveries. Must be positive; zero or invalid values fall back to the default.                       |
-| `PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS`         | `1800000`                                                             | Rolling window in milliseconds over which the recovery limit is counted. Each recovery ages out individually after this interval. The limit binds only when it exceeds `limit x cooldown`. `0` makes a spent budget permanent for the session. |
+| `PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS`         | `1800000`                                                             | Rolling window in milliseconds over which the recovery limit is counted. Each recovery ages out individually after this interval. The limit binds only when this window is longer than limit times cooldown. `0` makes a spent budget permanent for the session. |
 | `PI_XAI_WS_MAX_AGE_MS`                      | `1440000`                                                             | Hard maximum socket age. The default interrupts and retries an active request before xAI's 25-minute connection limit.                          |
 | `PI_XAI_WS_MAX_STORED_CONTEXT_TOKENS`       | unset                                                                 | Optional preemptive stored-mode cutoff. At or above this estimated stored conversation size, calls switch to `store: false` until compaction. Unset means keep storing until xAI rejects a response as too large. |
 | `PI_XAI_WS_MAX_REQUEST_IMAGE_BYTES`         | `8388608`                                                             | Newest-first budget for image bytes on the wire. Older screenshots become short placeholders so full-history requests stay under xAI's WebSocket size limit. Once omitted in a session, a screenshot stays omitted. |
@@ -137,6 +137,9 @@ the file and then the default. A `loopRecoveryLimit` of zero disables compaction
 and steering. A `loopRecoveryBudgetMs` of zero makes a spent budget permanent.
 The limit binds only while the window can hold more recoveries than the limit, so
 keep `loopRecoveryBudgetMs` above `loopRecoveryLimit x loopRecoveryCooldownMs`.
+Inside that window, Pi says recovery is paused until an earlier recovery ages out
+or you send another message. A zero budget window keeps the permanent
+session-limit notice.
 
 ## How it works
 

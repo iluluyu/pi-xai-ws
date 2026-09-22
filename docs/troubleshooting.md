@@ -316,7 +316,9 @@ long session can recover again. A real user turn re-arms the budget and the
 cooldown, because a person intervening is the signal that the loop is over;
 hidden steers do not, so an unattended session keeps its bound. The limit binds
 only while the window can hold more recoveries than the limit, so keep `loopRecoveryBudgetMs` above
-`loopRecoveryLimit x loopRecoveryCooldownMs`. Set `loopRecoveryLimit` to zero to
+`loopRecoveryLimit x loopRecoveryCooldownMs`. Inside that window, Pi says recovery
+is paused until an earlier recovery ages out or you send another message. A zero
+budget window keeps the permanent session-limit notice. Set `loopRecoveryLimit` to zero to
 disable compaction and steering. If Pi reports that the session is already
 compacted or too small to compact, the extension continues directly because the
 aborted assistant is already excluded from xAI context. Other compaction

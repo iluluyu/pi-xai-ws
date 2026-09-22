@@ -13,6 +13,9 @@ import {
     type LoopRecoveryPending,
 } from "../src/loop-recovery.ts";
 
+const WINDOW_LIMIT_NOTIFY =
+    "Stopped repetitive Grok output. Automatic recovery is paused until an earlier recovery leaves the budget window, or until you send another message.";
+
 describe("sanitizeRepetitiveAssistant", () => {
     it("keeps a bounded unsigned prefix and drops later content", () => {
         const message = assistantMessage(1, [
@@ -109,7 +112,7 @@ describe("registerLoopRecovery", () => {
         ]);
     });
 
-    it("reports the per-session limit separately from the cooldown", () => {
+    it("reports the rolling-window limit separately from the cooldown", () => {
         const originalNow = Date.now;
         let now = 1_000_000;
         Date.now = () => now;
@@ -144,7 +147,7 @@ describe("registerLoopRecovery", () => {
 
             assert.equal(harness.compactions.length, 2);
             assert.deepEqual(harness.notifications.at(-1), [
-                "Stopped repetitive Grok output. This session has reached its automatic recovery limit.",
+                WINDOW_LIMIT_NOTIFY,
                 "error",
             ]);
         } finally {
@@ -200,7 +203,7 @@ describe("registerLoopRecovery", () => {
                 emitReplacement(harness, 2);
                 assert.equal(harness.compactions.length, 1);
                 assert.deepEqual(harness.notifications.at(-1), [
-                    "Stopped repetitive Grok output. This session has reached its automatic recovery limit.",
+                    WINDOW_LIMIT_NOTIFY,
                     "error",
                 ]);
             });
@@ -287,13 +290,19 @@ describe("registerLoopRecovery", () => {
                 const harness = setupRecovery();
                 assert.equal(recoverOrStop(harness, 1), "recovered");
 
+                emitUserTurn(harness);
+                assert.equal(recoverOrStop(harness, 2), "recovered");
+
                 advance(11 * 60_000);
-                assert.equal(recoverOrStop(harness, 2), "stopped");
+                assert.equal(recoverOrStop(harness, 3), "stopped");
+                assert.deepEqual(harness.notifications.at(-1), [
+                    WINDOW_LIMIT_NOTIFY,
+                    "error",
+                ]);
 
                 emitUserTurn(harness);
-                advance(11 * 60_000);
-                assert.equal(recoverOrStop(harness, 3), "recovered");
-                assert.equal(harness.compactions.length, 2);
+                assert.equal(recoverOrStop(harness, 4), "recovered");
+                assert.equal(harness.compactions.length, 3);
             });
         } finally {
             restoreEnv("PI_XAI_WS_LOOP_RECOVERY_LIMIT", previous);
@@ -316,7 +325,7 @@ describe("registerLoopRecovery", () => {
                 assert.equal(recoverOrStop(harness, 2), "stopped");
                 assert.equal(harness.compactions.length, 1);
                 assert.deepEqual(harness.notifications.at(-1), [
-                    "Stopped repetitive Grok output. This session has reached its automatic recovery limit.",
+                    WINDOW_LIMIT_NOTIFY,
                     "error",
                 ]);
             });
