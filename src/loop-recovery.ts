@@ -1,6 +1,6 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resolveLoopNoveltyThreshold } from "./config.ts";
+import { resolveLoopNoveltyThreshold, resolveLoopRecoveryPolicy, type LoopRecoveryPolicy } from "./config.ts";
 import { isXaiChatModel } from "./models.ts";
 import {
     RepetitionDetector,
@@ -9,8 +9,6 @@ import {
 } from "./repetition-detector.ts";
 
 const CLEAN_PREFIX_MAX_CHARS = 8_192;
-const RECOVERY_LIMIT_PER_SESSION = 2;
-const RECOVERY_WINDOW_MS = 10 * 60_000;
 
 export const LOOP_RECOVERY_CUSTOM_TYPE = "pi-xai-ws-loop-recovery";
 export const LOOP_RECOVERY_MARKER = "[Repetitive output removed before context recovery.]";
@@ -21,7 +19,7 @@ export const LOOP_RECOVERY_TEXT =
 export const LOOP_RECOVERY_COMPACTION_INSTRUCTIONS =
     "Exclude repetitive or policy-shaped filler from the summary. Preserve the user's goal, completed tool work, repository state, constraints, decisions, and the next concrete action.";
 
-type RecoveryDenialReason = "cooldown" | "in-progress" | "session-limit";
+type RecoveryDenialReason = "cooldown" | "disabled" | "in-progress" | "session-limit";
 
 type RecoveryDecision = {
     automaticRecovery: boolean;
@@ -45,7 +43,7 @@ type ActiveBlock = {
 
 type SessionState = {
     activeBlock?: ActiveBlock;
-    automaticRecoveries: number;
+    budgetTimes: number[];
     pending?: LoopRecoveryPending & { compactionStarted?: boolean };
     recoveryInProgress: boolean;
     recoveryTimes: number[];
@@ -65,6 +63,19 @@ export function registerLoopRecovery(pi: ExtensionAPI): void {
     });
     pi.on("turn_start", (_event, ctx) => {
         getState(sessions, ctx).activeBlock = undefined;
+    });
+    pi.on("message_start", (event, ctx) => {
+        // A person intervening is the signal that the loop is over, so a real
+        // user turn re-arms the budget and the cooldown. Hidden steers from this
+        // or another extension, and the system-shaped compaction summary, carry a
+        // customType or a non-user role and must not re-arm a session that no one
+        // is watching.
+        if (!isXaiChatModel(ctx.model) || !isHumanUserMessage(event.message)) {
+            return;
+        }
+        const state = getState(sessions, ctx);
+        state.budgetTimes = [];
+        state.recoveryTimes = [];
     });
 
     pi.on("message_update", (event, ctx) => {
@@ -110,9 +121,10 @@ export function registerLoopRecovery(pi: ExtensionAPI): void {
         const message = event.message as AssistantMessage;
         const blockText = readBlockText(message, update.contentIndex, contentKind);
         const now = Date.now();
-        const recovery = decideAutomaticRecovery(state, now);
+        const policy = resolveLoopRecoveryPolicy();
+        const recovery = decideAutomaticRecovery(state, policy, now);
         if (recovery.automaticRecovery) {
-            state.automaticRecoveries += 1;
+            state.budgetTimes.push(now);
             state.recoveryTimes.push(now);
         }
         state.pending = {
@@ -127,7 +139,7 @@ export function registerLoopRecovery(pi: ExtensionAPI): void {
             detection,
         };
         ctx.abort();
-        notifyDetection(ctx, recovery);
+        notifyDetection(ctx, recovery, policy);
         debugDetection(detection, ctx);
     });
 
@@ -212,20 +224,40 @@ export function sanitizeRepetitiveAssistant(
     };
 }
 
+function isHumanUserMessage(message: unknown): boolean {
+    if (typeof message !== "object" || message === null) {
+        return false;
+    }
+    const candidate = message as { customType?: unknown; role?: unknown };
+    return candidate.role === "user" && candidate.customType === undefined;
+}
+
 function appendMarker(prefix: string): string {
     const trimmed = prefix.trimEnd();
     return trimmed.length === 0 ? LOOP_RECOVERY_MARKER : `${trimmed}\n\n${LOOP_RECOVERY_MARKER}`;
 }
 
-function decideAutomaticRecovery(state: SessionState, now: number): RecoveryDecision {
-    state.recoveryTimes = state.recoveryTimes.filter((time) => now - time < RECOVERY_WINDOW_MS);
+function decideAutomaticRecovery(
+    state: SessionState,
+    policy: LoopRecoveryPolicy,
+    now: number,
+): RecoveryDecision {
+    state.recoveryTimes = state.recoveryTimes.filter(
+        (time) => now - time < policy.cooldownMs,
+    );
+    state.budgetTimes = policy.budgetMs === 0
+        ? state.budgetTimes
+        : state.budgetTimes.filter((time) => now - time < policy.budgetMs);
     if (state.recoveryInProgress) {
         return { automaticRecovery: false, denialReason: "in-progress" };
+    }
+    if (policy.limit === 0) {
+        return { automaticRecovery: false, denialReason: "disabled" };
     }
     if (state.recoveryTimes.length > 0) {
         return { automaticRecovery: false, denialReason: "cooldown" };
     }
-    if (state.automaticRecoveries >= RECOVERY_LIMIT_PER_SESSION) {
+    if (state.budgetTimes.length >= policy.limit) {
         return { automaticRecovery: false, denialReason: "session-limit" };
     }
     return { automaticRecovery: true };
@@ -233,7 +265,7 @@ function decideAutomaticRecovery(state: SessionState, now: number): RecoveryDeci
 
 function createState(): SessionState {
     return {
-        automaticRecoveries: 0,
+        budgetTimes: [],
         recoveryInProgress: false,
         recoveryTimes: [],
     };
@@ -267,7 +299,11 @@ function isNoopCompactionError(error: Error): boolean {
         error.message === "Nothing to compact (session too small)";
 }
 
-function notifyDetection(ctx: ExtensionContext, recovery: RecoveryDecision): void {
+function notifyDetection(
+    ctx: ExtensionContext,
+    recovery: RecoveryDecision,
+    policy: LoopRecoveryPolicy,
+): void {
     if (!ctx.hasUI) {
         return;
     }
@@ -276,10 +312,14 @@ function notifyDetection(ctx: ExtensionContext, recovery: RecoveryDecision): voi
         return;
     }
     let message = "Stopped repetitive Grok output. Automatic recovery is already in progress.";
-    if (recovery.denialReason === "cooldown") {
+    if (recovery.denialReason === "disabled") {
+        message = "Stopped repetitive Grok output. Automatic recovery is disabled by configuration.";
+    } else if (recovery.denialReason === "cooldown") {
         message = "Stopped repetitive Grok output. Automatic recovery is paused because another loop occurred recently.";
     } else if (recovery.denialReason === "session-limit") {
-        message = "Stopped repetitive Grok output. This session has reached its automatic recovery limit.";
+        message = policy.budgetMs === 0
+            ? "Stopped repetitive Grok output. This session has reached its automatic recovery limit."
+            : "Stopped repetitive Grok output. Automatic recovery is paused until an earlier recovery leaves the budget window, or until you send another message.";
     }
     ctx.ui.notify(message, "error");
 }

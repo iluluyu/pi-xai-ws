@@ -309,11 +309,21 @@ novelty in long thinking. It excludes fenced code. On the first detection it
 aborts the response, records only bounded clean context, warns through Pi's UI,
 and starts compaction before one hidden recovery turn.
 
-A second recurrence within ten minutes is stopped without another compaction.
-If Pi reports that the session is already compacted or too small to compact, the
-extension continues directly because the aborted assistant is already excluded
-from xAI context. Other compaction failures are reported without a retry. This
-is intentional protection against an automatic recovery loop.
+A recurrence inside `loopRecoveryCooldownMs` is stopped without another
+compaction. Automatic recovery is bounded by `loopRecoveryLimit` per rolling
+`loopRecoveryBudgetMs`; each recovery ages out of the window individually, so a
+long session can recover again. A real user turn re-arms the budget and the
+cooldown, because a person intervening is the signal that the loop is over;
+hidden steers do not, so an unattended session keeps its bound. The limit binds
+only while the window can hold more recoveries than the limit, so keep `loopRecoveryBudgetMs` above
+`loopRecoveryLimit x loopRecoveryCooldownMs`. Inside that window, Pi says recovery
+is paused until an earlier recovery ages out or you send another message. A zero
+budget window keeps the permanent session-limit notice. Set `loopRecoveryLimit` to zero to
+disable compaction and steering. If Pi reports that the session is already
+compacted or too small to compact, the extension continues directly because the
+aborted assistant is already excluded from xAI context. Other compaction
+failures are reported without a retry. This is intentional protection against an
+automatic recovery loop.
 
 The long-output backstop defaults to 85 percent repeated word 5-grams. Set a
 ratio above zero and at most one as `loopNoveltyThreshold` in the global config

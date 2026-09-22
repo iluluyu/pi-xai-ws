@@ -15,6 +15,7 @@ import {
     SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import {
+    LOOP_RECOVERY_CUSTOM_TYPE,
     LOOP_RECOVERY_MARKER,
     registerLoopRecovery,
 } from "../src/loop-recovery.ts";
@@ -81,6 +82,7 @@ it("runs sanitization, compaction, and recovery through Pi's real extension life
         thinkingLevel: "high",
     });
     const eventTypes: string[] = [];
+    const messageStartShapes: Array<{ customType: unknown; role: string }> = [];
     const assistantEnds: Array<{
         content: unknown;
         stopReason: string;
@@ -92,6 +94,12 @@ it("runs sanitization, compaction, and recovery through Pi's real extension life
     });
     session.subscribe((event) => {
         eventTypes.push(event.type);
+        if (event.type === "message_start") {
+            messageStartShapes.push({
+                customType: (event.message as { customType?: unknown }).customType,
+                role: event.message.role,
+            });
+        }
         if (event.type === "message_end" && event.message.role === "assistant") {
             assistantEnds.push({
                 content: event.message.content,
@@ -130,6 +138,16 @@ it("runs sanitization, compaction, and recovery through Pi's real extension life
         assert.ok(compactionEnd < secondAgentStart);
         assert.ok(sessionManager.getBranch().some((entry) => entry.type === "compaction"));
         assert.ok(sessionManager.getBranch().some((entry) => entry.type === "custom_message"));
+        // The re-arm check reads these shapes: a human turn is the only user-role
+        // start without a customType, while the hidden recovery steer arrives as a
+        // custom-role message and can never look like human input.
+        assert.deepEqual(
+            messageStartShapes.filter((shape) => shape.role === "user"),
+            [{ customType: undefined, role: "user" }],
+        );
+        assert.ok(messageStartShapes.some((shape) =>
+            shape.role === "custom" && shape.customType === LOOP_RECOVERY_CUSTOM_TYPE
+        ));
     } finally {
         session.dispose();
         rmSync(agentDir, { force: true, recursive: true });

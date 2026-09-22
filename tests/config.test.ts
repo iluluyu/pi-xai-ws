@@ -4,9 +4,13 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import {
     DEFAULT_LOOP_NOVELTY_THRESHOLD,
+    DEFAULT_LOOP_RECOVERY_BUDGET_MS,
+    DEFAULT_LOOP_RECOVERY_COOLDOWN_MS,
+    DEFAULT_LOOP_RECOVERY_LIMIT,
     DEFAULT_MAX_REQUEST_IMAGE_BYTES,
     cacheAffinityEnabled,
     resolveLoopNoveltyThreshold,
+    resolveLoopRecoveryPolicy,
     resolveMaxRequestImageBytes,
     resolveMaxStoredContextTokens,
     resolveRequestLiveness,
@@ -268,6 +272,65 @@ describe("resolveWsUrl", () => {
                 delete process.env.PI_XAI_WS_URL;
             } else {
                 process.env.PI_XAI_WS_URL = previous;
+            }
+        }
+    });
+});
+
+describe("resolveLoopRecoveryPolicy", () => {
+    it("accepts zero values and overrides from global config and the environment", () => {
+        const keys = [
+            "PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS",
+            "PI_XAI_WS_LOOP_RECOVERY_COOLDOWN_MS",
+            "PI_XAI_WS_LOOP_RECOVERY_LIMIT",
+        ] as const;
+        const previous = keys.map((key) => [key, process.env[key]] as const);
+        try {
+            for (const key of keys) {
+                delete process.env[key];
+            }
+            withConfigPath((configPath) => {
+                assert.deepEqual(resolveLoopRecoveryPolicy(configPath), {
+                    budgetMs: DEFAULT_LOOP_RECOVERY_BUDGET_MS,
+                    cooldownMs: DEFAULT_LOOP_RECOVERY_COOLDOWN_MS,
+                    limit: DEFAULT_LOOP_RECOVERY_LIMIT,
+                });
+
+                writeFileSync(configPath, JSON.stringify({
+                    loopRecoveryBudgetMs: 0,
+                    loopRecoveryCooldownMs: 60_000,
+                    loopRecoveryLimit: 0,
+                }));
+                assert.deepEqual(resolveLoopRecoveryPolicy(configPath), {
+                    budgetMs: 0,
+                    cooldownMs: 60_000,
+                    limit: 0,
+                });
+
+                process.env.PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS = "1200000";
+                process.env.PI_XAI_WS_LOOP_RECOVERY_COOLDOWN_MS = "30000";
+                process.env.PI_XAI_WS_LOOP_RECOVERY_LIMIT = "5";
+                assert.deepEqual(resolveLoopRecoveryPolicy(configPath), {
+                    budgetMs: 1_200_000,
+                    cooldownMs: 30_000,
+                    limit: 5,
+                });
+
+                for (const invalid of ["-1", "1.5", "invalid", ""]) {
+                    process.env.PI_XAI_WS_LOOP_RECOVERY_LIMIT = invalid;
+                    assert.equal(resolveLoopRecoveryPolicy(configPath).limit, 0);
+                }
+                process.env.PI_XAI_WS_LOOP_RECOVERY_LIMIT = "5";
+                process.env.PI_XAI_WS_LOOP_RECOVERY_COOLDOWN_MS = "0";
+                assert.equal(resolveLoopRecoveryPolicy(configPath).cooldownMs, 60_000);
+            });
+        } finally {
+            for (const [key, value] of previous) {
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
             }
         }
     });

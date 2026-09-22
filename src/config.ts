@@ -5,6 +5,9 @@ import { DEFAULT_LIVENESS_TIMEOUT_MS, DEFAULT_PING_INTERVAL_MS } from "./livenes
 
 export const DEFAULT_WS_URL = "wss://api.x.ai/v1/responses";
 export const DEFAULT_LOOP_NOVELTY_THRESHOLD = 0.85;
+export const DEFAULT_LOOP_RECOVERY_LIMIT = 2;
+export const DEFAULT_LOOP_RECOVERY_COOLDOWN_MS = 10 * 60_000;
+export const DEFAULT_LOOP_RECOVERY_BUDGET_MS = 30 * 60_000;
 export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_WS_IDLE_TIMEOUT_MS = 5 * 60_000;
 export const DEFAULT_WS_MAX_AGE_MS = 24 * 60_000;
@@ -60,6 +63,47 @@ export function resolveLoopNoveltyThreshold(configPath?: string): number {
 }
 
 /**
+ * Automatic-recovery budget for repetitive Grok output.
+ *
+ * `limit` caps how many automatic recoveries may be granted inside `budgetMs`.
+ * `cooldownMs` is the minimum gap between two of them. A `limit` of zero keeps
+ * detection and abort but never compacts or steers. A `budgetMs` of zero keeps
+ * a spent budget spent for the life of the session.
+ *
+ * The limit binds only when `budgetMs` exceeds `limit x cooldownMs`, because a
+ * shorter window cannot hold more recoveries than the limit at the cooldown
+ * rate. The default equals `(limit + 1) x cooldownMs`, leaving one spare
+ * cooldown inside the window.
+ */
+export type LoopRecoveryPolicy = {
+    budgetMs: number;
+    cooldownMs: number;
+    limit: number;
+};
+
+/**
+ * Resolves the automatic-recovery budget. Environment values win over the
+ * global package config, and invalid values fall through to the next source.
+ *
+ * The default budget is a rolling window: each recovery ages out individually
+ * after `budgetMs`.
+ */
+export function resolveLoopRecoveryPolicy(configPath?: string): LoopRecoveryPolicy {
+    const configured = readGlobalConfig(configPath);
+    return {
+        budgetMs: nonNegativeInteger(process.env.PI_XAI_WS_LOOP_RECOVERY_BUDGET_MS) ??
+            nonNegativeInteger(configured?.loopRecoveryBudgetMs) ??
+            DEFAULT_LOOP_RECOVERY_BUDGET_MS,
+        cooldownMs: positiveInteger(process.env.PI_XAI_WS_LOOP_RECOVERY_COOLDOWN_MS) ??
+            positiveInteger(configured?.loopRecoveryCooldownMs) ??
+            DEFAULT_LOOP_RECOVERY_COOLDOWN_MS,
+        limit: nonNegativeInteger(process.env.PI_XAI_WS_LOOP_RECOVERY_LIMIT) ??
+            nonNegativeInteger(configured?.loopRecoveryLimit) ??
+            DEFAULT_LOOP_RECOVERY_LIMIT,
+    };
+}
+
+/**
  * Optional preemptive stored-context cutoff. Unset by default so SuperGrok
  * stored continuation stays on until xAI rejects a response as too large.
  * Same-socket `store: false` continuation is still rejected on that path.
@@ -101,6 +145,15 @@ function positiveInteger(value: unknown): number | undefined {
         value = Number(value);
     }
     return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+        ? value
+        : undefined;
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+    if (typeof value === "string" && value.trim() !== "") {
+        value = Number(value);
+    }
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
         ? value
         : undefined;
 }
